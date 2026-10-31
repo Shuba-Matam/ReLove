@@ -7,6 +7,17 @@ A student marketplace for giving pre-loved items a new home.
 Phase 0: repository and account setup. Application implementation has not started.
 This repository preserves the original local commit history and subsequent work.
 
+Supabase connectivity is verified. The existing Vercel project `re-love` is linked
+to this repository's `main` branch and has its server environment variables.
+Google OAuth is configured in Supabase, email/password sign-in is disabled, and
+the authorization redirect to Google has been checked. Full sign-in testing awaits
+the application and callback route. Google audience/publishing status and account
+billing plans have not been verified. No application schema has been created.
+
+The production domain is `re-love-pi.vercel.app`. The authorized application
+callback routes are `/auth/callback` on that domain and on `http://localhost:3000`.
+Google's OAuth redirect URI points to the Supabase project's `/auth/v1/callback`.
+
 ## Planned stack
 
 Next.js App Router, TypeScript, Tailwind CSS, shadcn/ui, Supabase
