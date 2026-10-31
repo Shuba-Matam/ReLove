@@ -15,7 +15,8 @@ Next.js App Router, TypeScript, Tailwind CSS, shadcn/ui, Supabase
 ## Confirmed decisions
 
 - Google sign-in only; any Google account may register for now.
-- Free Supabase and Vercel plans; Mumbai database region if available.
+- Free plans requested for Supabase and Vercel. Reuse the owner's existing
+  Supabase project in Tokyo (`ap-northeast-1`); organization billing is not yet verified.
 - Original listing photos are the source of truth. Sellers confirm all AI suggestions.
 - AI must never invent brand, edition, price, or condition.
 - Keys remain in server environment variables, never `NEXT_PUBLIC` variables.
