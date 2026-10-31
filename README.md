@@ -4,7 +4,7 @@ A student marketplace for giving pre-loved items a new home.
 
 ## Status
 
-Phase 0: repository and account setup. Application implementation has not started.
+Phase 0: account setup and a public Next.js landing page for Google OAuth branding.
 This repository preserves the original local commit history and subsequent work.
 
 Supabase connectivity is verified. The existing Vercel project `re-love` is linked
@@ -13,6 +13,8 @@ Google OAuth is configured in Supabase, email/password sign-in is disabled, and
 the authorization redirect to Google has been checked. Full sign-in testing awaits
 the application and callback route. Google audience/publishing status and account
 billing plans have not been verified. No application schema has been created.
+The public homepage and `/privacy` describe the current preview; marketplace features
+and public sign-in are not yet implemented.
 
 The production domain is `re-love-pi.vercel.app`. The authorized application
 callback routes are `/auth/callback` on that domain and on `http://localhost:3000`.
@@ -22,6 +24,14 @@ Google's OAuth redirect URI points to the Supabase project's `/auth/v1/callback`
 
 Next.js App Router, TypeScript, Tailwind CSS, shadcn/ui, Supabase
 (Postgres, Auth, Storage, and row-level security), and Vercel.
+
+## Local development
+
+Use Node.js 22 or newer. Run `npm ci`, copy `.env.example` to `.env.local` and
+provide values privately, then run `npm run dev`. The public preview needs no
+credentials to render. Run `npm run lint`, `npm run typecheck`, and `npm run build`
+before deploying. Google client credentials configure hosted Supabase Auth and
+are not included in browser code.
 
 ## Confirmed decisions
 
