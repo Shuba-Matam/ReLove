@@ -9,7 +9,7 @@ export function ImageToggle({ imageUrl, cutoutUrl, title }: { imageUrl: string; 
 
   return (
     <div className="space-y-3">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-[#021640] bg-[#020102]">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-[#021640] bg-[#01071d]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={title} className="h-full w-full object-contain" />
       </div>
@@ -17,7 +17,7 @@ export function ImageToggle({ imageUrl, cutoutUrl, title }: { imageUrl: string; 
         <Button variant={mode === "original" ? "primary" : "secondary"} size="sm" onClick={() => setMode("original")}>Original</Button>
         <Button variant={mode === "cutout" ? "primary" : "secondary"} size="sm" disabled={!hasCutout} onClick={() => setMode("cutout")} title={hasCutout ? "Show cutout" : "No cutout available"}>Cutout</Button>
       </div>
-      {!hasCutout && <p className="text-xs text-[#9AA4B8]">Background-removed cutout will appear here when available.</p>}
+      {!hasCutout && <p className="text-xs leading-5 text-[#9AA4B8]">Background-removed cutout will appear here when available.</p>}
     </div>
   );
 }

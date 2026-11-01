@@ -53,23 +53,26 @@ export default function MyListingsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold text-[#F5F5F7]">My listings</h1>
-      {isDemo && <div className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm text-[#f5c6d8]">Demo mode — manage actions are disabled.</div>}
+    <div className="space-y-5">
+      <div className="border-b border-[#021640] pb-5">
+        <h1 className="text-2xl font-semibold tracking-tight text-[#F5F5F7]">My listings</h1>
+        <p className="mt-1 text-sm leading-6 text-[#9AA4B8]">Manage your active, sold and hidden listings.</p>
+      </div>
+      {isDemo && <div className="rounded-2xl border border-[#4a102f] bg-[#220815] p-4 text-sm leading-5 text-[#f5c6d8]">Demo mode — manage actions are disabled.</div>}
       <div className="flex gap-2">
         {(["active","sold","hidden"] as Tab[]).map((t)=>
-          <Button key={t} variant={tab===t?"primary":"secondary"} size="sm" onClick={()=>{setLoading(true);setError("");setListings(null);setTab(t);}}>{t}</Button>
+          <Button key={t} variant={tab===t?"primary":"secondary"} size="sm" onClick={()=>{setLoading(true);setError("");setListings(null);setTab(t);}} className="capitalize">{t}</Button>
         )}
       </div>
       {loading && <p className="text-sm text-[#9AA4B8]">Loading…</p>}
-      {error && <p role="alert" className="rounded-lg border border-[#4a102f] bg-[#220815] p-3 text-sm text-[#f5c6d8]">{error}</p>}
-      {listings && listings.length===0 && <div className="rounded-xl border border-[#021640] bg-[#01071d] p-8 text-center text-sm text-[#9AA4B8]">No {tab} listings.</div>}
+      {error && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">{error}</p>}
+      {listings && listings.length===0 && <div className="rounded-2xl border border-dashed border-[#021640] bg-[#01071d] p-8 text-center text-sm leading-6 text-[#9AA4B8]">No {tab} listings.</div>}
       {listings && listings.length>0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
           {listings.map((l)=>(
             <div key={l.id} className="space-y-2">
               <ListingCard listing={l} />
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1.5">
                 <Button asChild variant="secondary" size="sm"><Link href={`/listings/${l.id}/edit`}>Edit</Link></Button>
                 {tab==="active" && <Button variant="ghost" size="sm" onClick={()=>setConfirm({id:l.id, action:"sold"})}>Mark sold</Button>}
                 <Button variant="ghost" size="sm" onClick={()=>setConfirm({id:l.id, action:"delete"})}>Delete</Button>

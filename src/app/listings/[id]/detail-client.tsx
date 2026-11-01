@@ -48,7 +48,7 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8">
       <div>
         <ImageToggle imageUrl={listing.image_url} cutoutUrl={listing.cutout_url} title={listing.title} />
         {isOwner && session?.ai_enabled && !listing.cutout_url && <Button className="mt-3" variant="secondary" disabled={processing} onClick={createCutout}>{processing ? "Preparing cutout…" : "Create optional cutout"}</Button>}
@@ -56,11 +56,13 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
       </div>
 
       <div className="space-y-4">
-        {isDemo && <p className="text-xs text-[#9AA4B8]">Illustrative sample · not available for sale</p>}
-        {listing.status === "hidden" && <p role="status" className="rounded-xl bg-[#220815] p-3 text-sm text-[#f5c6d8]">This listing is hidden pending review. It is visible only to you.</p>}
-        {listing.status === "sold" && <Badge variant="sold" className="text-sm px-3 py-1">Sold — no longer available</Badge>}
-        <h1 className="text-2xl font-semibold leading-tight text-[#F5F5F7]">{listing.title}</h1>
-        <p className="text-xl font-bold text-[#F5F5F7]">{formatPrice(listing.price_inr)}</p>
+        {isDemo && <p className="text-xs font-medium uppercase tracking-widest text-[#9AA4B8]">Illustrative sample · not for sale</p>}
+        {listing.status === "hidden" && <p role="status" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">This listing is hidden pending review. It is visible only to you.</p>}
+        {listing.status === "sold" && <Badge variant="sold" className="px-3 py-1.5 text-xs">Sold — no longer available</Badge>}
+        <div>
+          <h1 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-[#F5F5F7] md:text-[1.7rem]">{listing.title}</h1>
+          <p className="mt-2 text-xl font-semibold tracking-tight text-[#F5F5F7]">{formatPrice(listing.price_inr)}</p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="condition">{CONDITION_LABELS[listing.condition]}</Badge>
           <Badge variant="default">{listing.hostel_block}</Badge>
@@ -68,11 +70,11 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
         </div>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Description</CardTitle></CardHeader>
-          <CardContent><p className="whitespace-pre-wrap text-sm leading-relaxed text-[#F5F5F7]">{listing.description}</p>
+          <CardHeader><CardTitle>Description</CardTitle></CardHeader>
+          <CardContent><p className="whitespace-pre-wrap text-sm leading-6 text-[#cbd5e1]">{listing.description}</p>
             {listing.tags.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {listing.tags.map((t) => <span key={t} className="rounded-full bg-[#021640] border border-[#021640] px-2.5 py-1 text-xs text-[#9AA4B8]">#{t}</span>)}
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {listing.tags.map((t) => <span key={t} className="rounded-full border border-[#021640] bg-[#020102] px-2.5 py-1 text-xs text-[#9AA4B8]">#{t}</span>)}
               </div>
             )}
           </CardContent>
@@ -80,10 +82,10 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
 
         {listing.seller && (
           <Card>
-            <CardHeader><CardTitle className="text-sm">Seller</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Seller</CardTitle></CardHeader>
             <CardContent className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {listing.seller.avatar_url ? <img src={listing.seller.avatar_url} alt={`${listing.seller.display_name} avatar`} className="size-10 rounded-full object-cover border border-[#021640]" /> : <span className="flex size-10 items-center justify-center rounded-full bg-[#021640] border border-[#03245e] text-sm">{listing.seller.display_name.slice(0,1).toUpperCase()}</span>}
+              {listing.seller.avatar_url ? <img src={listing.seller.avatar_url} alt={`${listing.seller.display_name} avatar`} className="size-10 rounded-full object-cover border border-[#021640]" /> : <span className="flex size-10 items-center justify-center rounded-full bg-[#021640] border border-[#03245e] text-sm font-medium text-[#F5F5F7]">{listing.seller.display_name.slice(0,1).toUpperCase()}</span>}
               <div>
                 <p className="text-sm font-medium text-[#F5F5F7]">{listing.seller.display_name}</p>
                 <p className="text-xs text-[#9AA4B8]">{listing.seller.hostel_block ?? "Hostel not set"}</p>
@@ -92,7 +94,7 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
           </Card>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 pt-1">
           {!isOwner ? (
             <Button onClick={handleContact} disabled={contactLoading || listing.status === "sold"} variant="primary">
               <MessageCircle className="size-4" /> {contactLoading ? "Opening…" : listing.status === "sold" ? "Sold" : "Message seller"}
@@ -102,7 +104,7 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
           )}
           <Button variant="ghost" size="sm" onClick={() => setReportOpen(true)}><Flag className="size-4" /> Report</Button>
         </div>
-        {contactError && <p role="alert" className="rounded-lg border border-[#4a102f] bg-[#220815] p-3 text-sm text-[#f5c6d8]">{contactError} {isDemo && <Link href="/login" className="underline text-[#60a5fa]">Sign in</Link>}</p>}
+        {contactError && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">{contactError} {isDemo && <Link href="/login" className="underline text-[#82b7ff] underline-offset-4">Sign in</Link>}</p>}
 
         {isOwner && (
           <div className="flex gap-2 pt-2">

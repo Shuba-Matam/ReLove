@@ -8,11 +8,11 @@ export const metadata: Metadata = {
 };
 
 export default function PrivacyPage() {
-  return <article className="mx-auto max-w-3xl py-8 sm:py-14">
-    <Link href="/" className="text-sm text-[#82b7ff] underline underline-offset-4">Back to Re-Love</Link>
-    <h1 className="mt-8 text-4xl font-semibold tracking-tight">Privacy</h1>
-    <p className="mt-3 text-sm text-[#9AA4B8]">Last updated: November 1, 2026</p>
-    <div className="mt-9 space-y-8 text-sm leading-7 text-[#9AA4B8]">
+  return <article className="mx-auto max-w-3xl py-6 sm:py-10">
+    <Link href="/" className="inline-flex items-center gap-1 text-sm text-[#82b7ff] underline decoration-[#03245e] underline-offset-4 hover:text-[#93c5fd]">← Back to Re-Love</Link>
+    <h1 className="mt-6 text-3xl font-semibold tracking-tight text-[#F5F5F7] md:text-4xl">Privacy</h1>
+    <p className="mt-2 text-sm text-[#9AA4B8]">Last updated: November 1, 2026</p>
+    <div className="mt-8 space-y-8 border-t border-[#021640] pt-8 text-sm leading-7 text-[#9AA4B8]">
       <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">About Re-Love</h2><p>Re-Love is a campus marketplace in development. Sample mode shows fictional listings and original illustrations; it does not let visitors publish listings or send messages. The following describes the information used when the connected marketplace features are available.</p></section>
       <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Accounts and profiles</h2><p>Google sign-in supplies an account identifier, email address, and any name or profile picture included in your Google profile. Supabase handles authentication. Re-Love uses secure session cookies to keep you signed in. Your display name, profile picture, and optional hostel block are visible with your profile and listings. Your email address is not shown in the marketplace.</p></section>
       <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Listings and photos</h2><p>Published listings show the title, description, price, condition, category, tags, hostel block, and photos you provide. Photos are resized and re-encoded, including removal of metadata, before storage. The uploaded source photo remains available alongside any optional cutout. Images use publicly readable URLs, so anyone with an image URL may view it, including images of listings that are later hidden. Do not upload private documents or photos containing information you do not want to share.</p></section>

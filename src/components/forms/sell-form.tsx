@@ -212,9 +212,9 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
 
   return (
     <form onSubmit={onSubmit} onChangeCapture={(event) => { if(!(event.target instanceof HTMLInputElement && event.target.type === "checkbox")) setConfirmed(false); }} className="space-y-6">
-      {!canWrite && !isDemo && <p role="status" className="rounded-xl border border-[#021640] bg-[#01071d] p-4 text-sm text-[#9AA4B8]">{sessionLoading ? "Checking your session…" : "Sign in to add photos and publish. You can look through the form below."}</p>}
+      {!canWrite && !isDemo && <p role="status" className="rounded-2xl border border-[#021640] bg-[#01071d] p-4 text-sm leading-5 text-[#9AA4B8]">{sessionLoading ? "Checking your session…" : "Sign in to add photos and publish. You can look through the form below."}</p>}
       {isDemo && (
-        <div className="rounded-xl border border-[#4a102f] bg-[#220815] p-4 text-sm text-[#f5c6d8]">
+        <div className="rounded-2xl border border-[#4a102f] bg-[#220815] p-4 text-sm leading-5 text-[#f5c6d8]">
           Sample preview — publishing and messages will be available once the marketplace is connected.
         </div>
       )}
@@ -226,120 +226,122 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Image upload */}
-          <div>
-            <Label htmlFor="image">Photo *</Label>
-            <div className="mt-2 flex flex-col gap-3">
-              {imageUrl && (
-                <div className="relative w-full max-w-sm overflow-hidden rounded-xl border border-[#021640]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={imageUrl} alt="Listing preview" className="h-auto w-full object-cover" />
-                  <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white" aria-label="Remove image"><X className="size-4" /></button>
-                </div>
-              )}
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-[#03245e] bg-[#01071d] px-4 py-3 text-sm text-[#9AA4B8] hover:border-[#04307d] hover:text-[#F5F5F7]">
-                <Upload className="size-4" /> {uploading ? "Compressing…" : "Choose photo"}
-                <input type="file" id="image" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
-              </label>
-              {uploadInfo && <p className="text-xs text-[#9AA4B8]">{uploadInfo}</p>}
-              {fieldErrors.image_path && <p className="text-xs text-red-400">{fieldErrors.image_path}</p>}
-            </div>
-          </div>
-
-          {/* AI assist - optional only */}
-          <div className="rounded-xl border border-[#021640] bg-[#020102] p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-[#F5F5F7]"><Sparkles className="size-4 text-[#60a5fa]" /> Optional AI assistance</div>
-            <p className="mt-1 text-xs text-[#9AA4B8]">AI never auto-publishes. Suggestions are marked and require your confirmation. Manual entry works without AI.</p>
-            <div className="mt-3 space-y-2">
-              <Label htmlFor="transcript">Describe the item (for AI draft)</Label>
-              <div className="flex gap-2">
-                <Textarea id="transcript" placeholder="e.g. Used engineering mechanics book, 3rd edition, some highlighting…" value={transcript} onChange={(e)=>setTranscript(e.target.value)} className="flex-1" rows={2} />
-                <Button type="button" variant="secondary" size="icon" onClick={toggleRecording} disabled={!canWrite || (!recording && aiLoading) || !session?.ai_enabled} aria-label={recording ? "Stop recording" : "Start voice recording"} title={recording ? "Stop" : "Record voice"}>
-                  <Mic className={recording ? "text-red-400 animate-pulse" : ""} />
-                </Button>
+            <div>
+              <Label htmlFor="image">Photo *</Label>
+              <div className="mt-1.5 flex flex-col gap-3">
+                {imageUrl && (
+                  <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[#021640]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imageUrl} alt="Listing preview" className="h-auto w-full object-cover" />
+                    <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur" aria-label="Remove image"><X className="size-4" /></button>
+                  </div>
+                )}
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-dashed border-[#03245e] bg-[#020102] px-4 py-2.5 text-sm font-medium text-[#9AA4B8] transition hover:border-[#04307d] hover:text-[#F5F5F7]">
+                  <Upload className="size-4" /> {uploading ? "Compressing…" : "Choose photo"}
+                  <input type="file" id="image" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
+                </label>
+                {uploadInfo && <p className="text-xs leading-5 text-[#9AA4B8]">{uploadInfo}</p>}
+                {fieldErrors.image_path && <p className="text-xs text-red-400">{fieldErrors.image_path}</p>}
               </div>
-              <p className="text-xs text-[#9AA4B8]">Voice recording uses your microphone and falls back to typed text if unavailable. Editable transcript.</p>
-              <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={handleAiDraft} disabled={aiLoading || !canWrite || !session?.ai_enabled || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate draft"}</Button>
-                {aiDraft && suggestedFields.length > 0 && <span className="text-xs text-[#9AA4B8] self-center">Suggestions ready — review below</span>}
-              </div>
-              {aiError && <p className="text-xs text-amber-300">{aiError}</p>}
-              {aiDraft && (
-                <div className="rounded-lg border border-[#03245e] bg-[#01071d] p-3 space-y-2">
-                  <p className="text-xs font-semibold text-[#F5F5F7]">AI suggestions (click to apply):</p>
-                  {suggestedFields.map((f) => (
-                    <div key={f} className="flex items-center justify-between gap-2 rounded border border-[#021640] bg-[#020102] px-3 py-2 text-xs">
-                      <span className="text-[#9AA4B8]">{f}: <span className="text-[#F5F5F7]">{String((aiDraft as Record<string, unknown>)[f] ?? aiDraft[f as keyof typeof aiDraft] ?? "")}</span></span>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => applySuggestion(f)}>Apply</Button>
-                    </div>
-                  ))}
-                  <p className="text-[11px] text-[#9AA4B8]">Verify every field before publishing. If suggestions are unavailable, you can write every detail yourself.</p>
+            </div>
+
+            {/* AI assist - optional only */}
+            <div className="rounded-2xl border border-[#021640] bg-[#020102] p-4">
+              <div className="flex items-center gap-2 text-[13px] font-medium text-[#F5F5F7]"><Sparkles className="size-4 text-[#60a5fa]" /> Optional AI assistance</div>
+              <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">AI never auto-publishes. Suggestions are marked and require your confirmation. Manual entry works without AI.</p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <Label htmlFor="transcript">Describe the item (for AI draft)</Label>
+                  <div className="mt-1.5 flex gap-2">
+                    <Textarea id="transcript" placeholder="e.g. Used engineering mechanics book, 3rd edition, some highlighting…" value={transcript} onChange={(e)=>setTranscript(e.target.value)} className="flex-1 bg-[#01071d]" rows={2} />
+                    <Button type="button" variant="secondary" size="icon" onClick={toggleRecording} disabled={!canWrite || (!recording && aiLoading) || !session?.ai_enabled} aria-label={recording ? "Stop recording" : "Start voice recording"} title={recording ? "Stop" : "Record voice"}>
+                      <Mic className={recording ? "text-red-400 animate-pulse" : ""} />
+                    </Button>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-5 text-[#9AA4B8]">Voice recording uses your microphone and falls back to typed text if unavailable.</p>
                 </div>
-              )}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={handleAiDraft} disabled={aiLoading || !canWrite || !session?.ai_enabled || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate draft"}</Button>
+                  {aiDraft && suggestedFields.length > 0 && <span className="self-center text-xs text-[#9AA4B8]">Suggestions ready — review below</span>}
+                </div>
+                {aiError && <p className="text-xs leading-5 text-amber-300">{aiError}</p>}
+                {aiDraft && (
+                  <div className="rounded-xl border border-[#03245e] bg-[#01071d] p-3 space-y-2">
+                    <p className="text-xs font-semibold text-[#F5F5F7]">AI suggestions (click to apply):</p>
+                    {suggestedFields.map((f) => (
+                      <div key={f} className="flex items-center justify-between gap-2 rounded-xl border border-[#021640] bg-[#020102] px-3 py-2 text-xs">
+                        <span className="text-[#9AA4B8]">{f}: <span className="text-[#F5F5F7]">{String((aiDraft as Record<string, unknown>)[f] ?? aiDraft[f as keyof typeof aiDraft] ?? "")}</span></span>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => applySuggestion(f)}>Apply</Button>
+                      </div>
+                    ))}
+                    <p className="text-[11px] leading-4 text-[#9AA4B8]">Verify every field before publishing. If suggestions are unavailable, you can write every detail yourself.</p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          <div>
-            <Label htmlFor="title">Title *</Label>
-            <Input id="title" value={title} onChange={(e)=>setTitle(e.target.value)} maxLength={100} required className="mt-1" placeholder="e.g. Engineering Mechanics by R.S. Khurmi" />
-            {suggestedFields.includes("title") && <Badge variant="outline" className="mt-1">AI suggested — confirm</Badge>}
-            {fieldErrors.title && <p className="text-xs text-red-400 mt-1">{String(fieldErrors.title)}</p>}
-          </div>
-
-          <div>
-            <Label htmlFor="description">Description *</Label>
-            <Textarea id="description" value={description} onChange={(e)=>setDescription(e.target.value)} maxLength={3000} required className="mt-1" placeholder="Condition, usage, defects, pickup details…" rows={5} />
-            <p className="mt-1 text-xs text-[#9AA4B8]">{description.length}/3000</p>
-            {fieldErrors.description && <p className="text-xs text-red-400">{String(fieldErrors.description)}</p>}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="price">Price (₹) *</Label>
-              <Input id="price" type="number" step={1} inputMode="numeric" min={0} max={10000000} value={price} onChange={(e)=>setPrice(e.target.value)} required className="mt-1" placeholder="500" />
-              {(priceWarning || priceZeroWarning) && <p className="mt-1 flex items-center gap-1 text-xs text-amber-300"><AlertTriangle className="size-3" />{priceWarning ?? priceZeroWarning}</p>}
-              {fieldErrors.price_inr && <p className="text-xs text-red-400 mt-1">{String(fieldErrors.price_inr)}</p>}
+              <Label htmlFor="title">Title *</Label>
+              <Input id="title" value={title} onChange={(e)=>setTitle(e.target.value)} maxLength={100} required className="mt-1.5 bg-[#020102]" placeholder="e.g. Engineering Mechanics by R.S. Khurmi" />
+              {suggestedFields.includes("title") && <Badge variant="outline" className="mt-1.5">AI suggested — confirm</Badge>}
+              {fieldErrors.title && <p className="mt-1 text-xs text-red-400">{String(fieldErrors.title)}</p>}
             </div>
+
             <div>
-              <Label htmlFor="category">Category *</Label>
-              <Select id="category" required value={categoryId} onChange={(e)=>setCategoryId(e.target.value)} className="mt-1">
-                <option value="" disabled>Choose a category</option>
-                {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
+              <Label htmlFor="description">Description *</Label>
+              <Textarea id="description" value={description} onChange={(e)=>setDescription(e.target.value)} maxLength={3000} required className="mt-1.5 bg-[#020102]" placeholder="Condition, usage, defects, pickup details…" rows={5} />
+              <p className="mt-1.5 text-xs text-[#9AA4B8]">{description.length}/3000</p>
+              {fieldErrors.description && <p className="text-xs text-red-400">{String(fieldErrors.description)}</p>}
             </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="price">Price (₹) *</Label>
+                <Input id="price" type="number" step={1} inputMode="numeric" min={0} max={10000000} value={price} onChange={(e)=>setPrice(e.target.value)} required className="mt-1.5 bg-[#020102]" placeholder="500" />
+                {(priceWarning || priceZeroWarning) && <p className="mt-1.5 flex items-center gap-1 text-xs text-amber-300"><AlertTriangle className="size-3" />{priceWarning ?? priceZeroWarning}</p>}
+                {fieldErrors.price_inr && <p className="mt-1 text-xs text-red-400">{String(fieldErrors.price_inr)}</p>}
+              </div>
+              <div>
+                <Label htmlFor="category">Category *</Label>
+                <Select id="category" required value={categoryId} onChange={(e)=>setCategoryId(e.target.value)} className="mt-1.5 bg-[#020102]">
+                  <option value="" disabled>Choose a category</option>
+                  {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="condition">Condition *</Label>
+                <Select id="condition" required value={condition} onChange={(e)=>setCondition(e.target.value)} className="mt-1.5 bg-[#020102]">
+                  <option value="" disabled>Choose a condition</option>
+                  {CONDITIONS.map((c) => <option key={c} value={c}>{CONDITION_LABELS[c]}</option>)}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="block">Hostel block *</Label>
+                <Input id="block" value={block} onChange={(e)=>setBlock(e.target.value)} maxLength={60} required className="mt-1.5 bg-[#020102]" placeholder="E.g. A Block, GH-2" />
+                {fieldErrors.hostel_block && <p className="mt-1 text-xs text-red-400">{String(fieldErrors.hostel_block)}</p>}
+              </div>
+            </div>
+
             <div>
-              <Label htmlFor="condition">Condition *</Label>
-              <Select id="condition" required value={condition} onChange={(e)=>setCondition(e.target.value)} className="mt-1">
-                <option value="" disabled>Choose a condition</option>
-                {CONDITIONS.map((c) => <option key={c} value={c}>{CONDITION_LABELS[c]}</option>)}
-              </Select>
+              <Label htmlFor="tags">Tags (optional, max 12)</Label>
+              <div className="mt-1.5 flex gap-2">
+                <Input id="tags" value={tagInput} onChange={(e)=>setTagInput(e.target.value)} placeholder="Add tag and press Enter" maxLength={32} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}}} className="bg-[#020102]" />
+                <Button type="button" variant="secondary" onClick={()=>{ if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}} disabled={tags.length>=12}>Add</Button>
+              </div>
+              {tags.length>0 && <div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t,i)=><span key={i} className="inline-flex items-center gap-1 rounded-full border border-[#021640] bg-[#021640] px-2.5 py-1 text-xs text-[#F5F5F7]">{t}<button type="button" onClick={()=>setTags(tags.filter((_,idx)=>idx!==i))} aria-label={`Remove ${t}`} className="rounded-full p-0.5 hover:bg-[#03245e]"><X className="size-3" /></button></span>)}</div>}
             </div>
-            <div>
-              <Label htmlFor="block">Hostel block *</Label>
-              <Input id="block" value={block} onChange={(e)=>setBlock(e.target.value)} maxLength={60} required className="mt-1" placeholder="E.g. A Block, GH-2" />
-              {fieldErrors.hostel_block && <p className="text-xs text-red-400 mt-1">{String(fieldErrors.hostel_block)}</p>}
+
+            <label className="flex items-start gap-2.5 rounded-xl border border-[#021640] bg-[#020102] p-3 text-sm leading-5">
+              <input type="checkbox" checked={confirmed} onChange={(e)=>setConfirmed(e.target.checked)} required className="mt-0.5 size-4 accent-[#03245e]" />
+              <span className="text-[#9AA4B8]">I confirm the details above are accurate. I understand AI suggestions must be verified and the original photo is the source of truth.</span>
+            </label>
+
+            {error && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">{error}</p>}
+
+            <div className="flex gap-2 pt-1">
+              <Button type="submit" variant="primary" disabled={submitting || !canWrite || !imagePath || !confirmed || uploading}>{submitting ? "Saving…" : initialListing ? "Save changes" : "Publish listing"}</Button>
+              <Button type="button" variant="ghost" onClick={()=>router.back()}>Cancel</Button>
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="tags">Tags (optional, max 12)</Label>
-            <div className="mt-1 flex gap-2">
-              <Input id="tags" value={tagInput} onChange={(e)=>setTagInput(e.target.value)} placeholder="Add tag and press Enter" maxLength={32} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}}} />
-              <Button type="button" variant="secondary" onClick={()=>{ if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}} disabled={tags.length>=12}>Add</Button>
-            </div>
-            {tags.length>0 && <div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t,i)=><span key={i} className="inline-flex items-center gap-1 rounded-full border border-[#021640] bg-[#021640] px-2.5 py-1 text-xs text-[#F5F5F7]">{t}<button type="button" onClick={()=>setTags(tags.filter((_,idx)=>idx!==i))} aria-label={`Remove ${t}`}><X className="size-3" /></button></span>)}</div>}
-          </div>
-
-          <label className="flex items-start gap-2 rounded-lg border border-[#021640] bg-[#020102] p-3 text-sm">
-            <input type="checkbox" checked={confirmed} onChange={(e)=>setConfirmed(e.target.checked)} required className="mt-0.5 accent-[#03245e]" />
-            <span className="text-[#9AA4B8]">I confirm the details above are accurate. I understand AI suggestions must be verified and the original photo is the source of truth.</span>
-          </label>
-
-          {error && <p role="alert" className="rounded-lg border border-[#4a102f] bg-[#220815] p-3 text-sm text-[#f5c6d8]">{error}</p>}
-
-          <div className="flex gap-2">
-            <Button type="submit" variant="primary" disabled={submitting || !canWrite || !imagePath || !confirmed || uploading}>{submitting ? "Saving…" : initialListing ? "Save changes" : "Publish listing"}</Button>
-            <Button type="button" variant="ghost" onClick={()=>router.back()}>Cancel</Button>
-          </div>
         </CardContent>
       </Card>
     </form>

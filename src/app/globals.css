@@ -27,13 +27,21 @@ html {
   color-scheme: dark;
   scrollbar-gutter: stable;
   scroll-behavior: smooth;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   background: #020102;
   color: #F5F5F7;
-  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: #03245e;
+  color: #F5F5F7;
 }
 
 :focus-visible {
@@ -43,7 +51,7 @@ body {
 
 /* scrollbar styling */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #01071d; }
+::-webkit-scrollbar-track { background: #020102; }
 ::-webkit-scrollbar-thumb { background: #021640; border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: #03245e; }
 
@@ -55,4 +63,9 @@ body {
   overflow: hidden;
 }
 
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+.text-balance { text-wrap: balance; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

@@ -51,24 +51,27 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-2xl font-semibold text-[#F5F5F7]">Inbox</h1>
+    <div className="mx-auto max-w-3xl space-y-5">
+      <div className="border-b border-[#021640] pb-5">
+        <h1 className="text-2xl font-semibold tracking-tight text-[#F5F5F7]">Inbox</h1>
+        <p className="mt-1 text-sm leading-6 text-[#9AA4B8]">Conversations about your listings.</p>
+      </div>
       {loading && <p className="text-sm text-[#9AA4B8]">Loading conversations…</p>}
-      {error && <p role="alert" className="rounded-lg border border-[#4a102f] bg-[#220815] p-3 text-sm text-[#f5c6d8]">{error}</p>}
-      {threads && threads.length === 0 && <div className="rounded-xl border border-[#021640] bg-[#01071d] p-8 text-center text-sm text-[#9AA4B8]">No conversations yet. Visit a listing and tap “Message seller”.</div>}
+      {error && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">{error}</p>}
+      {threads && threads.length === 0 && <div className="rounded-2xl border border-dashed border-[#021640] bg-[#01071d] p-8 text-center text-sm leading-6 text-[#9AA4B8]">No conversations yet. Visit a listing and tap “Message seller”.</div>}
       {threads && threads.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {threads.map((t) => (
-            <Link key={t.id} href={`/inbox/${t.id}`} className="flex items-center gap-3 rounded-xl border border-[#021640] bg-[#01071d] p-3 hover:border-[#03245e] transition">
+            <Link key={t.id} href={`/inbox/${t.id}`} className="flex items-center gap-3 rounded-2xl border border-[#021640] bg-[#01071d] p-3 transition hover:border-[#03245e] hover:bg-[#020102]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={t.listing.image_url} alt={t.listing.title} className="size-14 rounded-lg object-cover border border-[#021640]" />
+              <img src={t.listing.image_url} alt={t.listing.title} className="size-14 rounded-xl object-cover border border-[#021640]" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-[#F5F5F7]">{t.listing.title} — {t.participant.display_name}</p>
-                <p className="truncate text-xs text-[#9AA4B8]">{t.last_message?.body ?? "No messages yet"}</p>
+                <p className="truncate text-xs leading-5 text-[#9AA4B8]">{t.last_message?.body ?? "No messages yet"}</p>
               </div>
-              <div className="text-right">
-                {t.unread_count > 0 && <span className="inline-flex size-5 items-center justify-center rounded-full bg-[#03245e] text-xs text-white">{t.unread_count}</span>}
-                <p className="text-[11px] text-[#9AA4B8]">{new Date(t.updated_at).toLocaleDateString()}</p>
+              <div className="shrink-0 text-right">
+                {t.unread_count > 0 && <span className="inline-flex size-5 items-center justify-center rounded-full bg-[#03245e] text-xs font-medium text-white">{t.unread_count}</span>}
+                <p className="mt-1 text-[11px] text-[#9AA4B8]">{new Date(t.updated_at).toLocaleDateString()}</p>
               </div>
             </Link>
           ))}

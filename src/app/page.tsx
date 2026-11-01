@@ -1,22 +1,48 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowUpRight, Heart } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { CategoryChips } from "@/components/listings/category-chips";
 import { Filters } from "@/components/listings/filters";
 import { ListingFeed } from "@/components/listings/listing-feed";
 import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
- return <div className="space-y-7 md:space-y-9">
-  <section className="relative overflow-hidden rounded-3xl border border-[#021640] bg-[#01071d] px-6 py-9 md:px-10 md:py-14">
-   <div className="relative z-10 max-w-2xl"><p className="mb-5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[.2em] text-[#82b7ff]"><Heart className="size-3" /> LESS NEW. MORE YOU.</p>
-   <h1 className="max-w-xl text-4xl font-semibold leading-[1.1] tracking-tight md:text-6xl">Good things deserve<br /><span className="text-[#82b7ff]">a second story.</span></h1>
-   <p className="mt-5 max-w-lg text-sm leading-7 text-[#9AA4B8] md:text-base">The books you finished. The chair you loved. Find their next person, right here on campus.</p>
-   <div className="mt-7 flex flex-wrap items-center gap-4"><Button asChild variant="primary" className="h-11 rounded-full px-6"><Link href="/sell">Pass something on <ArrowUpRight className="size-4" /></Link></Button><span className="text-xs text-[#9AA4B8]">A little less waste. A little more possibility.</span></div></div>
-   <div className="pointer-events-none absolute -right-20 -top-16 size-96 rounded-full border border-[#163569] opacity-40" aria-hidden="true" /><div className="pointer-events-none absolute -bottom-44 right-16 size-96 rounded-full border border-[#163569] opacity-25" aria-hidden="true" />
-  </section>
-  <Suspense fallback={<div className="h-12" />}><CategoryChips /></Suspense>
-  <Suspense fallback={<div className="h-24 rounded-xl bg-[#01071d]" />}><Filters /></Suspense>
-  <Suspense fallback={<p className="text-sm text-[#9AA4B8]">Loading your finds…</p>}><ListingFeed /></Suspense>
- </div>;
+  return (
+    <div className="space-y-8 md:space-y-10">
+      <section className="border-b border-[#021640] pb-8 md:pb-10 pt-2 md:pt-4">
+        <div className="max-w-3xl">
+          <p className="inline-flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[#9AA4B8]">
+            <span className="h-px w-7 bg-[#021640]" aria-hidden="true" />
+            Less new. More you.
+          </p>
+          <h1 className="mt-4 text-balance text-[2rem] font-[650] leading-[0.95] tracking-[-0.03em] text-[#F5F5F7] md:mt-5 md:text-[3.4rem]">
+            Good things deserve
+            <br />
+            <span className="text-[#82b7ff]">a second story.</span>
+          </h1>
+          <p className="mt-4 max-w-[46ch] text-sm leading-6 text-[#9AA4B8] md:text-[15px] md:leading-7">
+            The books you finished. The chair you loved. Find their next person — right here on campus. No storefront, just students passing things on.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-3 md:mt-7">
+            <Button asChild variant="primary" className="h-10 rounded-full px-5 text-[13px] font-medium">
+              <Link href="/sell">Pass something on <ArrowRight className="size-3.5" /></Link>
+            </Button>
+            <Link href="/categories" className="inline-flex h-10 items-center rounded-full border border-[#021640] bg-[#01071d] px-5 text-[13px] font-medium text-[#F5F5F7] transition hover:border-[#03245e] hover:bg-[#020102]">
+              Browse categories
+            </Link>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-[#6b7280]">A little less waste. A little more possibility. Meet in public and check items before paying.</p>
+        </div>
+      </section>
+      <Suspense fallback={<div className="h-10" />}>
+        <CategoryChips />
+      </Suspense>
+      <Suspense fallback={<div className="h-24 rounded-xl border border-[#021640] bg-[#01071d]" />}>
+        <Filters />
+      </Suspense>
+      <Suspense fallback={<p className="text-sm text-[#9AA4B8]">Loading your finds…</p>}>
+        <ListingFeed />
+      </Suspense>
+    </div>
+  );
 }
