@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22.14+
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14"
+          cache: npm
+
+      - name: Install (bypass npm10 edgesOut bug)
+        run: npx --yes npm@11.21.1 ci
+
+      - name: Env sanity (demo, no secrets required)
+        run: node scripts/check-env.mjs
+        env:
+          APP_MODE: demo
+          AI_ENABLED: "false"
+          GOOGLE_AUTH_ENABLED: "false"
+
+      - name: Lint
+        run: npx --yes npm@11.21.1 run lint
+
+      - name: Typecheck (next typegen before tsc — clean checkout fix)
+        run: npx --yes npm@11.21.1 run typecheck
+
+      - name: Unit tests
+        run: npx --yes npm@11.21.1 test
+
+      - name: Release script tests (built-in node:test, no deps)
+        run: node --test scripts/release-checks.test.mjs
+
+      - name: Build production (demo, AI off, no secrets)
+        run: npx --yes npm@11.21.1 run build
+        env:
+          APP_MODE: demo
+          AI_ENABLED: "false"
+          GOOGLE_AUTH_ENABLED: "false"
+
+      - name: Smoke HTTP (demo, on unused port via --start)
+        run: node scripts/smoke-http.mjs --start --expect=demo
+        env:
+          APP_MODE: demo
+          AI_ENABLED: "false"
+          GOOGLE_AUTH_ENABLED: "false"

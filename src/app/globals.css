@@ -1,311 +1,58 @@
 @import "tailwindcss";
 
-/* -------------------------------------------------
-   Re-Love design tokens — palette mandated
-   page #020102, cards/nav #01071d, border #021640
-   primary #03245e, warm #220815
-   text #F5F5F7, muted #9AA4B8, link lighter blue
--------------------------------------------------- */
-:root {
-  --page: #020102;
-  --card: #01071d;
-  --border: #021640;
-  --primary: #03245e;
-  --primary-hover: #0a3a8a;
-  --warm: #220815;
-  --text: #f5f5f7;
-  --muted: #9aa4b8;
-  --link: #8fb8ff;
-  --link-hover: #c2d6ff;
-  --focus: #8fb8ff;
-  --focus-ring: rgba(143, 184, 255, 0.45);
-  --radius: 16px;
-  --radius-lg: 20px;
-  --header-h: 64px;
+@theme {
+  --color-bg: #020102;
+  --color-card: #01071d;
+  --color-nav: #01071d;
+  --color-border-subtle: #021640;
+  --color-border-strong: #03245e;
+  --color-button: #03245e;
+  --color-button-hover: #04307d;
+  --color-sold: #220815;
+  --color-sold-border: #4a102f;
+  --color-text: #F5F5F7;
+  --color-muted: #9AA4B8;
+  --color-link: #60a5fa;
+  --color-link-hover: #93c5fd;
+  --color-focus: #3b82f6;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
 }
 
-@theme inline {
-  --color-page: var(--page);
-  --color-card: var(--card);
-  --color-border: var(--border);
-  --color-primary: var(--primary);
-  --color-warm: var(--warm);
-  --radius-xl: var(--radius);
-}
+* { border-color: var(--color-border-subtle); }
 
-/* Base */
 html {
-  scroll-behavior: smooth;
-  scrollbar-gutter: stable;
   color-scheme: dark;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
 }
 
 body {
-  margin: 0;
-  min-height: 100vh;
-  background: var(--page);
-  color: var(--text);
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    "Noto Sans",
-    sans-serif,
-    "Apple Color Emoji",
-    "Segoe UI Emoji";
-  line-height: 1.6;
-  overflow-x: hidden;
+  background: #020102;
+  color: #F5F5F7;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Keep Tailwind preflight from forcing transparent bg in dark */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-/* Focus */
 :focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
-:focus:not(:focus-visible) {
-  outline: none;
+/* scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #01071d; }
+::-webkit-scrollbar-thumb { background: #021640; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #03245e; }
+
+/* utility helpers */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-::selection {
-  background: rgba(143, 184, 255, 0.22);
-  color: var(--text);
-}
-
-/* Links */
-a {
-  color: var(--link);
-  text-underline-offset: 3px;
-  text-decoration-thickness: 1.25px;
-}
-
-a:hover {
-  color: var(--link-hover);
-}
-
-a:active {
-  opacity: 0.9;
-}
-
-/* Utilities */
-.text-balance {
-  text-wrap: balance;
-}
-
-/* Scrollbar for webkit */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 999px;
-  border: 2px solid var(--page);
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-/* -------------------------------------------------
-   Prose — used by Astra's /privacy page + any
-   longform. Clean base styles, no extra deps.
--------------------------------------------------- */
-.prose {
-  color: var(--text);
-  max-width: 68ch;
-  font-size: 1rem;
-  line-height: 1.75;
-}
-
-.prose :where(p) {
-  margin-block: 1em;
-  color: var(--text);
-}
-
-.prose :where(p + p) {
-  margin-top: 1.1em;
-}
-
-.prose :where(h1, h2, h3, h4) {
-  color: var(--text);
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  text-wrap: balance;
-}
-
-.prose :where(h1) {
-  font-size: clamp(1.9rem, 4vw, 2.4rem);
-  margin: 0 0 0.6em;
-}
-
-.prose :where(h2) {
-  font-size: clamp(1.35rem, 3vw, 1.6rem);
-  margin: 2.2em 0 0.6em;
-  padding-top: 0.4em;
-  border-top: 1px solid var(--border);
-}
-
-.prose :where(h3) {
-  font-size: 1.15rem;
-  margin: 1.9em 0 0.5em;
-}
-
-.prose :where(ul, ol) {
-  margin: 1em 0 1.2em;
-  padding-left: 1.5em;
-}
-
-.prose :where(li) {
-  margin: 0.45em 0;
-  color: var(--text);
-}
-
-.prose :where(li::marker) {
-  color: var(--muted);
-}
-
-.prose :where(a) {
-  color: var(--link);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: rgba(143, 184, 255, 0.45);
-}
-
-.prose :where(a:hover) {
-  color: var(--link-hover);
-  text-decoration-color: currentColor;
-}
-
-.prose :where(strong) {
-  font-weight: 650;
-  color: var(--text);
-}
-
-.prose :where(em) {
-  font-style: italic;
-  color: var(--text);
-}
-
-.prose :where(blockquote) {
-  margin: 1.6em 0;
-  padding: 0.9em 1.1em;
-  border-left: 3px solid var(--border);
-  background: var(--card);
-  border-radius: 0 12px 12px 0;
-  color: var(--muted);
-  font-size: 0.98em;
-}
-
-.prose :where(code) {
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
-  font-size: 0.9em;
-  background: var(--card);
-  border: 1px solid var(--border);
-  padding: 0.15em 0.4em;
-  border-radius: 6px;
-  color: var(--text);
-}
-
-.prose :where(pre) {
-  margin: 1.5em 0;
-  padding: 1em 1.1em;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow-x: auto;
-  font-size: 0.9em;
-  line-height: 1.6;
-}
-
-.prose :where(pre code) {
-  background: transparent;
-  border: 0;
-  padding: 0;
-}
-
-.prose :where(hr) {
-  margin: 2em 0;
-  border: 0;
-  height: 1px;
-  background: var(--border);
-}
-
-.prose :where(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1.5em 0;
-  font-size: 0.95em;
-}
-
-.prose :where(th, td) {
-  text-align: left;
-  padding: 0.65em 0.85em;
-  border: 1px solid var(--border);
-}
-
-.prose :where(th) {
-  background: var(--card);
-  font-weight: 600;
-  color: var(--text);
-}
-
-.prose :where(td) {
-  color: var(--muted);
-}
-
-.prose :where(small) {
-  color: var(--muted);
-  font-size: 0.875em;
-}
-
-/* Fine print helper used by prose pages */
-.prose :where(.lead) {
-  font-size: 1.06em;
-  color: var(--muted);
-  line-height: 1.65;
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-/* Print tweaks for prose */
-@media print {
-  body {
-    background: #fff !important;
-    color: #111 !important;
-  }
-  .prose {
-    color: #111;
-  }
-}
-
-section[id], main[id] { scroll-margin-top: 5rem; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

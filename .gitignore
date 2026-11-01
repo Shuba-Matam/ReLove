@@ -9,6 +9,8 @@ node_modules/
 out/
 .vercel/
 *.tsbuildinfo
+coverage/
+.logs/
 
 # Local package-manager logs
 npm-debug.log*

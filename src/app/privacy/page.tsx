@@ -2,70 +2,26 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy",
-  description: "How the Re-Love public preview handles information.",
+  title: "Privacy · Re-Love",
+  description: "How Re-Love handles account details, listings, messages, and optional AI assistance.",
   alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {
-  return (
-    <main className="mx-auto max-w-3xl px-6 py-12 sm:py-20">
-      <Link href="/" className="text-sm text-[#8CB9FF] underline underline-offset-4">
-        Back to Re-Love
-      </Link>
-      <p className="mt-12 text-sm uppercase tracking-widest text-[#9AA4B8]">Public preview</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight">Privacy</h1>
-      <p className="mt-4 text-[#9AA4B8]">Last updated: November 1, 2026</p>
-
-      <div className="mt-10 space-y-9 text-base leading-8 text-[#9AA4B8]">
-        <section>
-          <h2 className="mb-3 text-xl font-semibold text-[#F5F5F7]">About this preview</h2>
-          <p>
-            Re-Love is a student marketplace in development. This public preview explains
-            the project. It does not currently offer account creation, sign-in, listings,
-            photo uploads, or messaging, and it does not request access to your Google account.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-3 text-xl font-semibold text-[#F5F5F7]">Information when you visit</h2>
-          <p>
-            This preview has no forms and no advertising or analytics scripts added by
-            Re-Love. Our hosting provider, Vercel, may process technical request information,
-            such as your IP address, browser information, and requested page, to deliver
-            and protect the website. Visit Vercel&apos;s privacy policy for information about
-            its processing.
-          </p>
-          <a href="https://vercel.com/legal/privacy-policy" className="mt-3 inline-block text-[#8CB9FF] underline underline-offset-4">
-            Vercel privacy policy
-          </a>
-        </section>
-        <section>
-          <h2 className="mb-3 text-xl font-semibold text-[#F5F5F7]">Before the marketplace opens</h2>
-          <p>
-            Google sign-in is planned for the marketplace. This notice will be updated
-            before sign-in or other features collect information, to explain the data
-            used, its purpose, service providers, retention, and account deletion options.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-3 text-xl font-semibold text-[#F5F5F7]">External links</h2>
-          <p>
-            Links to GitHub and other websites take you to services with their own privacy
-            practices. Re-Love does not receive information you submit on those services
-            through this preview.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-3 text-xl font-semibold text-[#F5F5F7]">Privacy questions</h2>
-          <p>
-            Contact the Re-Love project through its GitHub issues page. Issues are public;
-            do not include passwords, tokens, or personal information in your message.
-          </p>
-          <a href="https://github.com/Shuba-Matam/ReLove/issues" className="mt-3 inline-block text-[#8CB9FF] underline underline-offset-4">
-            Ask a privacy question
-          </a>
-        </section>
-      </div>
-    </main>
-  );
+  return <article className="mx-auto max-w-3xl py-8 sm:py-14">
+    <Link href="/" className="text-sm text-[#82b7ff] underline underline-offset-4">Back to Re-Love</Link>
+    <h1 className="mt-8 text-4xl font-semibold tracking-tight">Privacy</h1>
+    <p className="mt-3 text-sm text-[#9AA4B8]">Last updated: November 1, 2026</p>
+    <div className="mt-9 space-y-8 text-sm leading-7 text-[#9AA4B8]">
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">About Re-Love</h2><p>Re-Love is a campus marketplace in development. Sample mode shows fictional listings and original illustrations; it does not let visitors publish listings or send messages. The following describes the information used when the connected marketplace features are available.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Accounts and profiles</h2><p>Google sign-in supplies an account identifier, email address, and any name or profile picture included in your Google profile. Supabase handles authentication. Re-Love uses secure session cookies to keep you signed in. Your display name, profile picture, and optional hostel block are visible with your profile and listings. Your email address is not shown in the marketplace.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Listings and photos</h2><p>Published listings show the title, description, price, condition, category, tags, hostel block, and photos you provide. Photos are resized and re-encoded, including removal of metadata, before storage. The uploaded source photo remains available alongside any optional cutout. Images use publicly readable URLs, so anyone with an image URL may view it, including images of listings that are later hidden. Do not upload private documents or photos containing information you do not want to share.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Messages and reports</h2><p>Messages are stored to support conversations about a listing. Database rules restrict normal app access to the conversation participants. Messages are not end-to-end encrypted; the project operator and service providers may have administrative access. Reports are stored for operator review and are not readable by other users through the app.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Optional AI features</h2><p>AI is disabled by default. When enabled, requesting a listing draft sends your selected photo and description or transcript to Baseten&apos;s Muse Spark Open endpoint. Requesting transcription sends the recorded audio to Meta&apos;s Voice Transcribe endpoint; requesting a cutout sends the source photo and item title to Meta&apos;s Segment Anything Model endpoint. The app does not store the audio recording after transcription. Drafts and transcripts remain editable, and nothing is published until you confirm it. If enabled, a listing moderation check may also send listing details and the photo to Baseten. Usage records store your account identifier, feature, time, success status, and duration to enforce limits. Keys are kept on the server.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Service providers and technical data</h2><p>Vercel hosts the app. Supabase stores accounts, listings, images, messages, reports, and AI usage records. These services may process technical request information to deliver and protect their services. Baseten and Meta process optional AI requests under their own terms. Re-Love does not add advertising or analytics scripts.</p><a href="https://vercel.com/legal/privacy-policy" className="text-[#82b7ff] underline">Vercel privacy policy</a><span> · </span><a href="https://supabase.com/privacy" className="text-[#82b7ff] underline">Supabase privacy policy</a></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Storage and deletion</h2><p>Listings and account information remain stored while the account or listing exists. Deleting a listing removes its associated conversations, messages, and reports, and attempts to remove its source and cutout images. A temporary storage failure may leave an image until cleanup is retried. There is no automatic retention schedule. Backups and provider logs follow the providers&apos; retention settings. Self-service account deletion is not yet available; use the project contact to request a private follow-up. Do not include personal information in a public issue.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Offline use</h2><p>The optional installed app caches an offline notice and icons. It does not cache private pages, API responses, messages, or unsent changes for offline use.</p></section>
+      <section><h2 className="mb-2 text-xl font-medium text-[#F5F5F7]">Questions and requests</h2><p>Contact the project through its GitHub issues page to request a private follow-up. Issues are public: do not post passwords, tokens, account identifiers, or personal details.</p><a href="https://github.com/Shuba-Matam/ReLove/issues" className="text-[#82b7ff] underline underline-offset-4">Re-Love project contact</a></section>
+    </div>
+  </article>;
 }
