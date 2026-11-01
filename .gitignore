@@ -1,6 +1,7 @@
 # Local credentials and environment files
 .env
 .env.*
+.env.local
 !.env.example
 
 # Dependencies, builds, and deployment metadata
