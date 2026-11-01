@@ -6,5 +6,4 @@ export default defineConfig([
   ...nextVitals,
   ...nextTypescript,
   globalIgnores([".next/**", "out/**", "next-env.d.ts", "coverage/**"]),
-  { rules: { "@next/next/no-img-element": "off" }, linterOptions: { reportUnusedDisableDirectives: false } },
 ]);

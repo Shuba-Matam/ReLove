@@ -70,8 +70,8 @@ export function SiteHeader() {
           {session?.user ? (
             <div className="flex items-center gap-1">
               <Link href="/profile" aria-label="Profile" className="flex items-center gap-2 rounded-full px-1.5 py-1 transition hover:bg-[#021640]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 {session.user.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={session.user.avatar_url} alt={`${session.user.display_name} avatar`} className="size-7 rounded-full object-cover border border-[#021640]" />
                 ) : (
                   <span className="flex size-7 items-center justify-center rounded-full bg-[#021640] border border-[#03245e] text-xs font-medium text-[#F5F5F7]">{session.user.display_name.slice(0, 1).toUpperCase()}</span>
