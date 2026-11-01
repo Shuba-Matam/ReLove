@@ -40,7 +40,13 @@ export async function listListings(raw: Record<string, unknown>): Promise<ApiRes
   if (filters.max_price !== undefined) query = query.lte("price_inr", filters.max_price);
   query = filters.sort === "newest" ? query.order("created_at", { ascending: false }) : query.order("price_inr", { ascending: filters.sort === "price_asc" });
   const { data, error, count } = await query.order("id", { ascending: true }).range(filters.cursor, filters.cursor + filters.limit - 1);
-  if (error) throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Listings are temporarily unavailable. Please try again.");
+  if (error) {
+    // Empty inventory pagination edge: PostgREST may error on out-of-range cursor; treat as empty page
+    if ((count ?? 0) === 0 || filters.cursor >= (count ?? 0)) {
+      return { data: [], mode, meta: { total: count ?? 0, next_cursor: null } };
+    }
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Listings are temporarily unavailable. Please try again.");
+  }
   const listings = (data ?? []) as unknown as Listing[];
   const next = filters.cursor + listings.length;
   return { data: listings, mode, meta: { total: count ?? 0, next_cursor: next < (count ?? 0) ? next : null } };
