@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-/* eslint-disable @typescript-eslint/no-unused-vars -- sidecar CLI uses presence masking, helpers tested via spawn */
- /**
+/**
  * Re-Love env validator
  * Dependency-free Node 22.14+ ESM CLI.
  * Validates APP_MODE, Supabase, auth/AI flags, caps, provider keys,
