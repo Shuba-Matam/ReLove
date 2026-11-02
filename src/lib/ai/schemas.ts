@@ -25,6 +25,12 @@ export const aiDraftSchema = z.object({
 }).strict();
 export type AiDraft = z.infer<typeof aiDraftSchema>;
 
+// Meta's buffered PUSH_TO_TALK response includes metadata alongside the transcript.
+// Validate what we consume and strip provider metadata from the app response.
+export const transcriptionResponseSchema = z.object({
+  transcript: z.string().trim().min(1).max(3000),
+});
+
 export function parseAiDraft(raw: string): AiDraft {
   if (raw.length > 18000) throw new Error("Draft response too large.");
   const stripped = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");

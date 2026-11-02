@@ -4,9 +4,10 @@
 // Do not copy secrets; SMOKE_SESSION_COOKIE stays in your shell only.
 const origin = process.env.SMOKE_APP_ORIGIN || "http://localhost:3000";
 const cookie = process.env.SMOKE_SESSION_COOKIE;
-const arg = process.argv[2];
-const transcriptFlag = process.argv.includes("--transcript");
-if (!cookie || !arg) {
+const args = process.argv.slice(2);
+const transcriptFlag = args[0] === "--transcript";
+const arg = transcriptFlag ? args[1] : args[0];
+if (!cookie || !arg?.trim() || args.length !== (transcriptFlag ? 2 : 1) || (transcriptFlag && arg.length > 3000)) {
   console.error("Set SMOKE_SESSION_COOKIE privately, then run:");
   console.error("  npm run smoke:ai -- <owned-upload-path>");
   console.error("  npm run smoke:ai -- --transcript \"a short description\"");

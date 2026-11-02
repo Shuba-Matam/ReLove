@@ -1,6 +1,6 @@
-import { z } from "zod";
 import { requireAiContext, runAi } from "@/lib/ai/context";
 import { validateWav } from "@/lib/ai/audio";
+import { transcriptionResponseSchema } from "@/lib/ai/schemas";
 import { checkProviderResponse, readLimitedText } from "@/lib/ai/provider";
 import { ApiProblem, assertSameOrigin, json, readFormLimited, withApi } from "@/lib/server/http";
 
@@ -26,9 +26,8 @@ export const POST = withApi(async (request: Request) => {
     outgoing.set("audio", file, "recording.wav");
     const response = await fetch("https://api.meta.ai/v1/asr/transcribe", { method: "POST", signal, cache: "no-store", redirect: "error", headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, body: outgoing });
     checkProviderResponse(response);
-    // Zod provider output; 413/400 already mapped to 400 above, 429/5xx are retryable via guard.
     const parsed = JSON.parse(await readLimitedText(response));
-    return z.object({ transcript: z.string().trim().min(1).max(3000) }).strict().parse(parsed).transcript;
+    return transcriptionResponseSchema.parse(parsed).transcript;
   }, 1);
   return json({ transcript });
 });

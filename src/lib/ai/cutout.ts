@@ -15,10 +15,8 @@ import { checkMask } from "./rules";
  * - Parser @meta-sam/parser is official; we use parseImageStream + decodeMaskToRaster.
  * - We never fetch arbitrary provider URLs; only the fixed Meta endpoint and we embed
  *   the original as base64 data URL. Provider payload URLs (if any) are ignored.
- * - Vercel reliability: runtime nodejs, maxDuration 30 (route), guard timeout 20s,
- *   sharp decode ~100-300ms, SAM stream 8-15s typical, fits Vercel Pro 30s; Hobby 10s
- *   would fail. No background queue; stale pending claims retry after 60s. See
- *   docs/PHASE-2-AI.md for concrete audit and proposal.
+ * - The route requests 30 seconds, with a 20-second provider deadline. Actual latency
+ *   remains unmeasured until provider smoke tests; no durable background queue exists.
  */
 async function* responseEvents(response: Response) {
   if (!response.body) throw new AiFailure("MASK_EMPTY", "No cutout was returned.");

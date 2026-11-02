@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiFailure, runGuardedAi, type UsageLedger } from "@/lib/ai/guard";
-import { draftRequestSchema, parseAiDraft } from "@/lib/ai/schemas";
+import { draftRequestSchema, parseAiDraft, transcriptionResponseSchema } from "@/lib/ai/schemas";
 import { checkMask, priceWarning } from "@/lib/ai/rules";
 import { validateWav } from "@/lib/ai/audio";
 
@@ -94,6 +94,12 @@ describe("cutout mask quality", () => {
   });
 });
 describe("audio validation", () => {
+  it("accepts Meta response metadata without returning it to the browser", () => {
+    expect(transcriptionResponseSchema.parse({ sessionId: "test", transcript: " A chair ", audioDurationMs: 1000, turns: [] }))
+      .toEqual({ transcript: "A chair" });
+    expect(transcriptionResponseSchema.safeParse({ transcript: " " }).success).toBe(false);
+    expect(transcriptionResponseSchema.safeParse({ transcript: 42 }).success).toBe(false);
+  });
   it("rejects non-WAV and wrong format", () => {
     expect(() => validateWav(new TextEncoder().encode("not wav"))).toThrow();
   });
