@@ -201,7 +201,7 @@ async function findFreePort(preferred) {
   const port = typeof addr === "object" && addr ? addr.port : 0;
   await new Promise((resolve) => srv.close(resolve));
   if (!port) throw new Error("failed to allocate free port");
-  // verify still free (quick)
+  // verify still free (quick) — retry if raced
   const free2 = await isPortFree(port);
   if (!free2) return findFreePort(null); // retry once
   return port;
@@ -255,17 +255,28 @@ async function spawnNextServer(port, expect) {
   const cleanup = async () => {
     if (child.exitCode !== null || child.signalCode !== null) return;
     try {
-      // On Windows, controller.abort sends SIGTERM; fallback to kill
       controller.abort();
       child.kill();
     } catch {}
-    // give 3s to exit gracefully, then force
+    // give 3s to exit gracefully, then force-kill (Windows needs taskkill for tree)
+    const forced = delay(3000).then(async () => {
+      try { child.kill("SIGKILL"); } catch {}
+      if (process.platform === "win32" && child.pid) {
+        try {
+          const cp = await import("node:child_process");
+          // best-effort tree kill on Windows
+          cp.spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", timeout: 2000 });
+        } catch {}
+      }
+    });
     await Promise.race([
-      new Promise((r) => child.on("exit", r)),
-      delay(3000).then(() => {
-        try { child.kill("SIGKILL"); } catch {}
-      }),
+      new Promise((r) => child.once("exit", r)),
+      forced.then(() => new Promise((r) => child.once("exit", r))),
+      // absolute hard timeout 5s
+      delay(5000),
     ]);
+    // ensure no lingering listeners
+    child.removeAllListeners("exit");
   };
 
   // Ensure cleanup on parent signals

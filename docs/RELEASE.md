@@ -43,19 +43,20 @@ npx --yes npm@11.21.1 ci
 npx --yes npm@11.21.1 run lint
 npx --yes npm@11.21.1 run typecheck   # next typegen && tsc --noEmit (clean-checkout fix)
 npx --yes npm@11.21.1 test            # 45 app tests (vitest)
-node --test scripts/release-checks.test.mjs   # built-in release script tests, no deps
+npx --yes npm@11.21.1 run test:release # built-in release script tests, no deps (also in npm run check)
+# or directly: node --test scripts/release-checks.test.mjs
 
 # 4. Production build — demo, AI off, no secrets (CI does this)
 APP_MODE=demo AI_ENABLED=false GOOGLE_AUTH_ENABLED=false npx --yes npm@11.21.1 run build
 
 # 5. HTTP smoke — existing origin
 node scripts/smoke-http.mjs --expect=demo
-node scripts/smoke-http.mjs --expect=demo --origin=http://localhost:3000
+npx --yes npm@11.21.1 run smoke:http -- --expect=demo --origin=http://localhost:3000
 node scripts/smoke-http.mjs --expect=live --origin=https://re-love-pi.vercel.app
 
 # 6. HTTP smoke — auto-start production server on free port, always cleans up
 node scripts/smoke-http.mjs --start --expect=demo
-node scripts/smoke-http.mjs --start --expect=demo --port=3100 --timeout=8000
+npx --yes npm@11.21.1 run smoke:http -- --start --expect=demo --port=3100 --timeout=8000
 ```
 
 ## Mode semantics (what the smoke distinguishes)
@@ -91,11 +92,12 @@ No further owner approvals needed — this doc does not re-ask for decisions alr
 
 ## Changed paths (this release layer only)
 
-* `scripts/check-env.mjs` — robust ESM CLI, server-only credential checks, localhost https exception, zero-cap allowed, service_role misuse rejected, `NEXT_PUBLIC_*` forbidden, repo-leak warning, never prints secrets.
-* `scripts/smoke-http.mjs` — ESM fetch-only GETs, manual redirect/same-origin, bounded bodies/timeouts, `--expect` mode contract, HTML + health/session/categories/listings/pagination/detail/private-API/PWA/no-store checks, `--start` spawns production Next on free port and always cleans up.
-* `scripts/release-checks.test.mjs` — `node:test` built-in tests for checker failures, `--help`/exit codes, redirect and body-limit boundaries; run via `node --test`.
-* `.github/workflows/ci.yml` — least-privilege `contents:read`, PR+push `main`, concurrency cancel, Node 22.14, `npx --yes npm@11.21.1 ci`, lint → typecheck (next typegen before tsc) → tests → `node --test` release checks → demo build (no secrets) → `--start` demo smoke.
-* `docs/RELEASE.md` — this file.
+* `scripts/check-env.mjs` — robust ESM CLI, server-only credential checks, localhost https exception, zero-cap allowed, service_role misuse rejected, `NEXT_PUBLIC_*` forbidden, repo-leak warning, never prints secrets. **Not modified in this patch — owned by primary thread.**
+* `scripts/smoke-http.mjs` — ESM fetch-only GETs, manual redirect/same-origin, bounded bodies/timeouts, `--expect` mode contract, HTML + health/session/categories/listings/pagination/detail/private-API/PWA/no-store checks, `--start` spawns production Next on free port and always cleans up. This patch adds bounded 5s hard cleanup and Windows `taskkill /T /F` tree-kill.
+* `scripts/release-checks.test.mjs` — `node:test` built-in tests with isolated env (no host secret bleed), real behavioral smoke against stub origins (pass/fail on mode/health/redirect), bounded subprocess timeouts and Windows cleanup; run via `npm run test:release` or `node --test`.
+* `package.json` — adds `test:release` (`node --test scripts/release-checks.test.mjs`) and `smoke:http` (`node scripts/smoke-http.mjs`); `check` now runs `lint && typecheck && test && test:release && build`.
+* `.github/workflows/ci.yml` — least-privilege `contents:read`, PR+push `main`, concurrency cancel, Node 22.14, `npx --yes npm@11.21.1 ci`, lint → typecheck (next typegen before tsc) → tests → `node --test` release checks → demo build (no secrets) → `--start` demo smoke. **Not modified here — primary thread owns CI.**
+* `docs/RELEASE.md` — this file (documents new scripts, preserves primary ownership of release/deployment).
 
 ## Tests run locally
 
@@ -107,9 +109,11 @@ npx --yes npm@11.21.1 ci                                   # ok
 npx --yes npm@11.21.1 run lint                             # ok
 npx --yes npm@11.21.1 run typecheck                        # ok
 npx --yes npm@11.21.1 test                                  # 45 passed (builder)
-node --test scripts/release-checks.test.mjs               # passed (release layer)
+npx --yes npm@11.21.1 run test:release                      # passed (release layer, isolated, behavioral)
+node --test scripts/release-checks.test.mjs               # alias, same
 APP_MODE=demo AI_ENABLED=false GOOGLE_AUTH_ENABLED=false npx --yes npm@11.21.1 run build  # ok demo build
-node scripts/smoke-http.mjs --start --expect=demo          # 0 (demo HTTP smoke)
+npx --yes npm@11.21.1 run smoke:http -- --start --expect=demo  # 0 (demo HTTP smoke, bounded cleanup)
+npx --yes npm@11.21.1 run check                            # lint + typecheck + test + test:release + build
 ```
 
 ## Remaining limits / integration note
