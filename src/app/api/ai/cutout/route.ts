@@ -2,12 +2,20 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireAiContext, runAi } from "@/lib/ai/context";
 import { makeCutout } from "@/lib/ai/cutout";
-import { ApiProblem, json, readJson, withApi } from "@/lib/server/http";
+import { ApiProblem, assertSameOrigin, json, readJson, withApi } from "@/lib/server/http";
 import { uuidSchema } from "@/lib/validation";
 
+/**
+ * POST /api/ai/cutout — optional, off until provider ready. Owner-only SAM cutout.
+ * Preserves original until derived JPEG is valid; correct mask size/fragmentation;
+ * no blind trust of provider URLs; atomic claim with 60s stale retry; Vercel bounded
+ * request (maxDuration 30, timeout 20s, no background job — see docs/PHASE-2-AI.md audit).
+ * Keeps IMPLEMENTATION-CONTRACT: { listing_id } -> { status }.
+ */
 export const runtime = "nodejs";
 export const maxDuration = 30;
 export const POST = withApi(async (request: Request) => {
+  assertSameOrigin(request);
   const { supabase, user, key, ledger } = await requireAiContext("cutout");
   const { listing_id } = await readJson(request, z.object({ listing_id: uuidSchema }).strict());
   const { data: listing, error } = await supabase.from("listings").select("id,seller_id,image_path,title,ai_status,cutout_path").eq("id", listing_id).eq("seller_id", user.id).maybeSingle();

@@ -1,3 +1,8 @@
+/**
+ * Verified against https://dev.meta.ai/docs/api-reference/voice/transcribe:
+ * POST /v1/asr/transcribe multipart request+audio, WAV mono 16-bit PCM 16/24kHz,
+ * max 32MB body, 10 min audio. We enforce stricter 60s / 3MB for campus use.
+ */
 export function validateWav(bytes: Uint8Array): { durationSeconds: number; sampleRate: number } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const tag = (offset: number) => String.fromCharCode(...bytes.slice(offset, offset + 4));

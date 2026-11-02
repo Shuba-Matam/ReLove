@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiFailure, runGuardedAi, type UsageLedger } from "@/lib/ai/guard";
-import { parseAiDraft } from "@/lib/ai/schemas";
+import { draftRequestSchema, parseAiDraft } from "@/lib/ai/schemas";
 import { checkMask, priceWarning } from "@/lib/ai/rules";
+import { validateWav } from "@/lib/ai/audio";
 
 const draft = { title: "Desk chair", description: "A chair with a padded seat.", category_slug: "furniture", tags: ["chair", "seat"], condition_hint: null, brand: null, edition: null };
 const ledger = (): UsageLedger => ({ reserve: vi.fn(async () => ({ allowed: true, usageId: "usage" })), complete: vi.fn(async () => undefined) });
@@ -19,6 +20,21 @@ describe("AI draft validation and seller authority", () => {
   });
   it("warns on zero and large prices without deciding a price for the seller", () => {
     expect(priceWarning(0)).toContain("free"); expect(priceWarning(250001)).toContain("high"); expect(priceWarning(450)).toBeNull();
+  });
+  it("validates draft request requires image or transcript and rejects bad paths", () => {
+    expect(draftRequestSchema.safeParse({}).success).toBe(false);
+    expect(draftRequestSchema.safeParse({ transcript: "  " }).success).toBe(false);
+    expect(draftRequestSchema.safeParse({ image_path: "not-a-path" }).success).toBe(false);
+    expect(draftRequestSchema.safeParse({ image_path: "11111111-1111-4111-8111-111111111111/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg" }).success).toBe(true);
+    expect(draftRequestSchema.safeParse({ transcript: "a chair" }).success).toBe(true);
+  });
+  it("normalizes tags to lowercased deduplicated set and strips fences", () => {
+    const raw = "```json\n" + JSON.stringify({ ...draft, tags: ["Chair", "chair", " SEAT "] }) + "\n```";
+    const parsed = parseAiDraft(raw);
+    expect(parsed.tags).toEqual(["chair", "seat"]);
+  });
+  it("rejects extra keys like price even when wrapped in markdown", () => {
+    expect(() => parseAiDraft("```json\n" + JSON.stringify({ ...draft, price_inr: 100 }) + "\n```")).toThrow();
   });
 });
 describe("AI failure drills", () => {
@@ -63,5 +79,37 @@ describe("cutout mask quality", () => {
   it("accepts a coherent foreground region", () => {
     const mask = new Uint8Array(100); for (let y = 2; y < 7; y++) for (let x = 2; x < 7; x++) mask[y * 10 + x] = 1;
     expect(checkMask(mask, 10, 10)).toMatchObject({ valid: true, components: 1, coverage: 0.25 });
+  });
+  it("rejects near-full-frame masks above 95% coverage", () => {
+    const mask = new Uint8Array(100); for (let i = 0; i < 96; i++) mask[i] = 1;
+    expect(checkMask(mask, 10, 10).reason).toBe("full_frame");
+  });
+  it("rejects tiny masks below 1.5% coverage", () => {
+    const mask = new Uint8Array(100); mask[0] = 1;
+    expect(checkMask(mask, 10, 10).reason).toBe("tiny");
+  });
+  it("accepts coverage just above tiny threshold", () => {
+    const mask = new Uint8Array(100); mask[0] = 1; mask[1] = 1;
+    expect(checkMask(mask, 10, 10).valid).toBe(true);
+  });
+});
+describe("audio validation", () => {
+  it("rejects non-WAV and wrong format", () => {
+    expect(() => validateWav(new TextEncoder().encode("not wav"))).toThrow();
+  });
+  it("validates mono 16-bit PCM at 16k and 24k up to 60s", () => {
+    const makeWav = (sampleRate: number, dataSamples: number) => {
+      const bytes = new Uint8Array(44 + dataSamples * 2);
+      const view = new DataView(bytes.buffer);
+      const text = (i: number, s: string) => [...s].forEach((c, o) => view.setUint8(i + o, c.charCodeAt(0)));
+      text(0, "RIFF"); view.setUint32(4, bytes.length - 8, true); text(8, "WAVE"); text(12, "fmt "); view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+      text(36, "data"); view.setUint32(40, dataSamples * 2, true);
+      return bytes;
+    };
+    expect(validateWav(makeWav(16000, 16000)).sampleRate).toBe(16000);
+    expect(validateWav(makeWav(24000, 24000)).sampleRate).toBe(24000);
+    expect(() => validateWav(makeWav(8000, 100))).toThrow();
+    expect(() => validateWav(makeWav(16000, 16000 * 61))).toThrow();
   });
 });

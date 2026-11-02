@@ -10,6 +10,10 @@ export function hasProhibitedContent(text: string): boolean {
   return prohibited.some((pattern) => pattern.test(text.normalize("NFKC")));
 }
 
+/**
+ * Mask validation matches spec: dimensions, tiny <1.5%, near-full-frame >95%, fragmented
+ * when components>20 or largest/filled<0.85. Original is preserved until derived JPEG is valid.
+ */
 export type MaskCheck = { valid: boolean; reason: "ok" | "dimensions" | "tiny" | "full_frame" | "fragmented"; coverage: number; components: number };
 export function checkMask(mask: Uint8Array, width: number, height: number): MaskCheck {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > 4000000 || mask.length !== width * height) return { valid: false, reason: "dimensions", coverage: 0, components: 0 };

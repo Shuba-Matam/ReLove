@@ -3,6 +3,10 @@ import { requireUser } from "@/lib/server/auth";
 import { ApiProblem } from "@/lib/server/http";
 import { AiFailure, runGuardedAi, type UsageLedger } from "./guard";
 
+/**
+ * Server-only secrets, auth+ownership checks, kill switch, atomic caps via DB.
+ * Provider keys are NOT exposed to client; coordinator owns enabling.
+ */
 export type AiFeature = "draft" | "transcribe" | "cutout" | "moderation";
 function cap(name: string, fallback: number) { const value = Number(process.env[name] ?? fallback); return Number.isSafeInteger(value) && value > 0 ? Math.min(value, 1000) : 0; }
 

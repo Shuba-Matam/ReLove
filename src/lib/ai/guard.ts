@@ -1,3 +1,8 @@
+/**
+ * Guard: kill switch, atomic caps, timeout 20s, max TWO retries total (incl bad JSON retry),
+ * manual fallback messages. Reservations count even when provider error/timeout occurs.
+ * All provider attempts reserve via DB RPC reserve_ai_usage (FOR UPDATE on ai_budget).
+ */
 export class AiFailure extends Error {
   constructor(public code: string, message: string, public status = 503, public retryable = false) { super(message); this.name = "AiFailure"; }
 }

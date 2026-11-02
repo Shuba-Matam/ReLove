@@ -4,6 +4,13 @@ import { basetenCompletion } from "@/lib/ai/provider";
 import { AiFailure } from "@/lib/ai/guard";
 import { ApiProblem, assertSameOrigin, json, readJson, withApi } from "@/lib/server/http";
 
+/**
+ * POST /api/ai/draft — preserves contract from docs/IMPLEMENTATION-CONTRACT.md:
+ * input { image_path?, transcript? } -> { draft, suggested_fields } where draft nullable
+ * title/category/description/condition_hint/brand/edition/tags. No price, seller confirms.
+ * Server-only secrets, Zod inputs+provider outputs, atomic caps, 20s timeout, max 2 retries
+ * incl bad JSON retry, manual fallback on 401/429/503. Original photo source of truth.
+ */
 export const runtime = "nodejs";
 export const maxDuration = 30;
 export const POST = withApi(async (request: Request) => {

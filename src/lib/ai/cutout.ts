@@ -6,6 +6,20 @@ import { AiFailure } from "./guard";
 import { checkProviderResponse } from "./provider";
 import { checkMask } from "./rules";
 
+/**
+ * SAM 3.1 contract verified 2026-11-02 via https://dev.meta.ai/docs/sam/client-libraries,
+ * https://dev.meta.ai/docs/sam/segmenting:
+ * - POST https://api.meta.ai/v1/responses, model "sam-3.1", stream:true,
+ *   metadata.mask_encoding "one_bit", input_text (short noun phrase) + input_image
+ *   (image_url as data URL or https). Stream is SSE with data: JSON events.
+ * - Parser @meta-sam/parser is official; we use parseImageStream + decodeMaskToRaster.
+ * - We never fetch arbitrary provider URLs; only the fixed Meta endpoint and we embed
+ *   the original as base64 data URL. Provider payload URLs (if any) are ignored.
+ * - Vercel reliability: runtime nodejs, maxDuration 30 (route), guard timeout 20s,
+ *   sharp decode ~100-300ms, SAM stream 8-15s typical, fits Vercel Pro 30s; Hobby 10s
+ *   would fail. No background queue; stale pending claims retry after 60s. See
+ *   docs/PHASE-2-AI.md for concrete audit and proposal.
+ */
 async function* responseEvents(response: Response) {
   if (!response.body) throw new AiFailure("MASK_EMPTY", "No cutout was returned.");
   const reader = response.body.getReader(); const decoder = new TextDecoder();
@@ -28,17 +42,26 @@ async function* responseEvents(response: Response) {
   } finally { await reader.cancel().catch(() => undefined); }
 }
 
+function sanitizePrompt(raw: string): string {
+  const cleaned = raw.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!cleaned) return "item";
+  // SAM concept prompt must be short noun phrase; strip control chars and keep visible.
+  const safe = cleaned.replace(/[\u0000-\u001f\u007f]/g, "");
+  return safe.length ? safe : "item";
+}
+
 export async function makeCutout(input: { original: Buffer; prompt: string; key: string; signal: AbortSignal }): Promise<Buffer> {
   const metadata = await sharp(input.original, { limitInputPixels: 4000000 }).metadata();
   const width = metadata.width!; const height = metadata.height!;
   if (!width || !height || width > 1600 || height > 1600) throw new AiFailure("IMAGE_SIZE", "Use a photo of at most 1600 pixels per side.");
+  const safePrompt = sanitizePrompt(input.prompt);
   const response = await fetch("https://api.meta.ai/v1/responses", {
     method: "POST", signal: input.signal, redirect: "error", cache: "no-store",
     headers: { Authorization: `Bearer ${input.key}`, "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({
       model: "sam-3.1", stream: true, metadata: { mask_encoding: "one_bit" },
       input: [{ type: "message", role: "user", content: [
-        { type: "input_text", text: input.prompt },
+        { type: "input_text", text: safePrompt },
         { type: "input_image", image_url: `data:image/jpeg;base64,${input.original.toString("base64")}` },
       ] }],
     }),

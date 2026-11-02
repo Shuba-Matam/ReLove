@@ -2,6 +2,14 @@ import { z } from "zod";
 import { CATEGORIES, CONDITIONS } from "@/lib/marketplace";
 import { imagePathSchema } from "@/lib/validation";
 
+/**
+ * Verified against primary docs 2026-11-02:
+ * - Baseten Muse Spark Open vision: image_url via chat/completions, max 8 images, 100 MiB body.
+ * - Baseten Muse Spark Open does NOT support structured JSON or JSON mode enforcement
+ *   (https://docs.baseten.co/inference/structured-outputs.md, /json-mode.md:
+ *   "except for Muse Spark Open"). We request plain text JSON and validate with Zod.
+ * - Never send response_format: json_object for this model; it is accepted but not enforced.
+ */
 export const draftRequestSchema = z.object({
   image_path: imagePathSchema.optional(), transcript: z.string().trim().min(1).max(3000).optional(),
 }).strict().refine((value) => Boolean(value.image_path || value.transcript), "Add a photo or description first.");
@@ -20,9 +28,13 @@ export type AiDraft = z.infer<typeof aiDraftSchema>;
 export function parseAiDraft(raw: string): AiDraft {
   if (raw.length > 18000) throw new Error("Draft response too large.");
   const stripped = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const result = aiDraftSchema.parse(JSON.parse(stripped));
+  let parsed: unknown;
+  try { parsed = JSON.parse(stripped); } catch { throw new Error("Draft response was not valid JSON."); }
+  const result = aiDraftSchema.parse(parsed);
   // These fields require a seller decision; never turn a visual guess into a product fact.
-  return { ...result, brand: null, edition: null, condition_hint: null, tags: [...new Set(result.tags.map((tag) => tag.toLowerCase()))] };
+  // Brand/edition/condition are forced to null even if the model returned a string.
+  const normalizedTags = [...new Set(result.tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))].slice(0, 12);
+  return { ...result, brand: null, edition: null, condition_hint: null, tags: normalizedTags };
 }
 
 export const DRAFT_PROMPT = `You help a seller draft a campus marketplace listing. Return only one JSON object with exactly these keys: title (string|null), description (string|null), category_slug (string|null), tags (string[]), condition_hint (null), brand (null), edition (null).
