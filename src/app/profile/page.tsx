@@ -42,14 +42,14 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-5">
-      <div className="border-b border-[#021640] pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight text-[#F5F5F7]">Profile</h1>
-        <p className="mt-2 text-sm leading-6 text-[#9AA4B8]">Update your display name and hostel block.</p>
+    <div className="mx-auto max-w-xl space-y-4">
+      <div className="pb-2">
+        <h1 className="text-xl font-semibold tracking-tight text-[#F5F5F7]">Profile</h1>
+        <p className="mt-1 text-sm text-[#9AA4B8]">Display name and hostel block.</p>
       </div>
-      {session.mode==="demo" && <div className="rounded-2xl border border-[#4a102f] bg-[#220815] p-4 text-sm leading-5 text-[#f5c6d8]">Demo mode — changes are not saved. <Link href="/login" className="underline decoration-[#f5c6d8] underline-offset-4 hover:text-white">Sign in</Link> to edit your real profile.</div>}
+      {session.mode==="demo" && <div className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">Demo — changes not saved. <Link href="/login" className="underline decoration-[#f5c6d8] underline-offset-4 hover:text-white">Sign in</Link> to edit.</div>}
       <Card>
-        <CardHeader><CardTitle>Your details</CardTitle><CardDescription>Visible with your profile and listings.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Your details</CardTitle><CardDescription>Shown with your listings.</CardDescription></CardHeader>
         <CardContent>
           <form onSubmit={save} className="space-y-4">
             <div>
@@ -60,11 +60,11 @@ export default function ProfilePage() {
               <Label htmlFor="pblock">Hostel block</Label>
               <Input id="pblock" value={block ?? session?.user?.hostel_block ?? ""} onChange={(e)=>setBlock(e.target.value)} maxLength={60} className="mt-1.5 bg-[#020102]" placeholder="e.g. A Block" />
             </div>
-            {err && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm text-[#f5c6d8]">{err}</p>}
-            {msg && <p role="status" className="rounded-xl border border-[#03245e] bg-[#021640] p-3 text-sm text-[#F5F5F7]">{msg}</p>}
+            {err && <p role="alert" className="rounded-xl bg-[#220815] p-3 text-sm text-[#f5c6d8] ring-1 ring-[#4a102f]">{err}</p>}
+            {msg && <p role="status" className="rounded-xl bg-[#01071d] p-3 text-sm text-[#F5F5F7] ring-1 ring-[#03245e]/60">{msg}</p>}
             <div className="flex gap-2 pt-1">
-              <Button type="submit" variant="primary" disabled={saving}>{saving?"Saving…":"Save changes"}</Button>
-              <Button asChild variant="ghost"><Link href="/my-listings">My listings</Link></Button>
+              <Button type="submit" variant="primary" size="sm" disabled={saving}>{saving?"Saving…":"Save changes"}</Button>
+              <Button asChild variant="ghost" size="sm"><Link href="/my-listings">My listings</Link></Button>
             </div>
           </form>
         </CardContent>

@@ -3,7 +3,7 @@
 @theme {
   --color-bg: #020102;
   --color-card: #01071d;
-  --color-nav: #01071d;
+  --color-nav: #020102;
   --color-border-subtle: #021640;
   --color-border-strong: #03245e;
   --color-button: #03245e;
@@ -12,16 +12,14 @@
   --color-sold-border: #4a102f;
   --color-text: #F5F5F7;
   --color-muted: #9AA4B8;
-  --color-link: #60a5fa;
+  --color-link: #82b7ff;
   --color-link-hover: #93c5fd;
-  --color-focus: #3b82f6;
+  --color-focus: #60a5fa;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-xl: 1.25rem;
 }
-
-* { border-color: var(--color-border-subtle); }
 
 html {
   color-scheme: dark;
@@ -48,6 +46,13 @@ body {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
+
+a { color: var(--color-link); }
+a:hover { color: var(--color-link-hover); }
+
+/* Hide scrollbars for chip rows but keep keyboard access */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
 
 /* scrollbar styling */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

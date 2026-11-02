@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORIES, CONDITIONS, CONDITION_LABELS } from "@/lib/marketplace";
 import { recordingToWav } from "@/lib/client/audio";
@@ -45,14 +44,12 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const [error, setError] = React.useState("");
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
-  // AI state
   const [transcript, setTranscript] = React.useState("");
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiError, setAiError] = React.useState("");
   const [suggestedFields, setSuggestedFields] = React.useState<string[]>([]);
   const [aiDraft, setAiDraft] = React.useState<DraftSuggestion["draft"] | null>(null);
 
-  // mic
   const [recording, setRecording] = React.useState(false);
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
   const recordingTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,7 +59,6 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
 
   const priceNum = Number(price);
   const priceWarning = price.trim() ? validatePrice(priceNum) : null;
-  const priceZeroWarning = null;
   React.useEffect(() => { mounted.current=true; return () => { mounted.current=false; if(recordingTimer.current) clearTimeout(recordingTimer.current); if(mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop(); streamRef.current?.getTracks().forEach((track) => track.stop()); }; },[]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -212,138 +208,146 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
 
   return (
     <form onSubmit={onSubmit} onChangeCapture={(event) => { if(!(event.target instanceof HTMLInputElement && event.target.type === "checkbox")) setConfirmed(false); }} className="space-y-6">
-      {!canWrite && !isDemo && <p role="status" className="rounded-2xl border border-[#021640] bg-[#01071d] p-4 text-sm leading-5 text-[#9AA4B8]">{sessionLoading ? "Checking your session…" : "Sign in to add photos and publish. You can look through the form below."}</p>}
+      {!canWrite && !isDemo && <p role="status" className="rounded-xl bg-[#01071d] p-3 text-sm leading-5 text-[#9AA4B8] ring-1 ring-[#021640]/60">{sessionLoading ? "Checking your session…" : "Sign in to add photos and publish. You can look through the form below."}</p>}
       {isDemo && (
-        <div className="rounded-2xl border border-[#4a102f] bg-[#220815] p-4 text-sm leading-5 text-[#f5c6d8]">
+        <div className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">
           Sample preview — publishing and messages will be available once the marketplace is connected.
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{initialListing ? "Edit listing" : "List an item"}</CardTitle>
-          <CardDescription>Choose a clear photo of your item. Your original photo stays visible alongside any optional cutout.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Image upload */}
-            <div>
-              <Label htmlFor="image">Photo *</Label>
-              <div className="mt-1.5 flex flex-col gap-3">
-                {imageUrl && (
-                  <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[#021640]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imageUrl} alt="Listing preview" className="h-auto w-full object-cover" />
-                    <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur" aria-label="Remove image"><X className="size-4" /></button>
-                  </div>
-                )}
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-dashed border-[#03245e] bg-[#020102] px-4 py-2.5 text-sm font-medium text-[#9AA4B8] transition hover:border-[#04307d] hover:text-[#F5F5F7]">
-                  <Upload className="size-4" /> {uploading ? "Compressing…" : "Choose photo"}
-                  <input type="file" id="image" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
-                </label>
-                {uploadInfo && <p className="text-xs leading-5 text-[#9AA4B8]">{uploadInfo}</p>}
-                {fieldErrors.image_path && <p className="text-xs text-red-400">{fieldErrors.image_path}</p>}
-              </div>
-            </div>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-sm font-semibold tracking-tight text-[#F5F5F7]">{initialListing ? "Edit listing" : "List an item"}</h2>
+          <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">A clear photo first. Your original stays visible alongside any optional cutout.</p>
+        </div>
 
-            {/* AI assist - optional only */}
-            <div className="rounded-2xl border border-[#021640] bg-[#020102] p-4">
-              <div className="flex items-center gap-2 text-[13px] font-medium text-[#F5F5F7]"><Sparkles className="size-4 text-[#60a5fa]" /> Optional AI assistance</div>
-              <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">AI never auto-publishes. Suggestions are marked and require your confirmation. Manual entry works without AI.</p>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <Label htmlFor="transcript">Describe the item (for AI draft)</Label>
-                  <div className="mt-1.5 flex gap-2">
-                    <Textarea id="transcript" placeholder="e.g. Used engineering mechanics book, 3rd edition, some highlighting…" value={transcript} onChange={(e)=>setTranscript(e.target.value)} className="flex-1 bg-[#01071d]" rows={2} />
-                    <Button type="button" variant="secondary" size="icon" onClick={toggleRecording} disabled={!canWrite || (!recording && aiLoading) || !session?.ai_enabled} aria-label={recording ? "Stop recording" : "Start voice recording"} title={recording ? "Stop" : "Record voice"}>
-                      <Mic className={recording ? "text-red-400 animate-pulse" : ""} />
-                    </Button>
-                  </div>
-                  <p className="mt-1.5 text-xs leading-5 text-[#9AA4B8]">Voice recording uses your microphone and falls back to typed text if unavailable.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" size="sm" onClick={handleAiDraft} disabled={aiLoading || !canWrite || !session?.ai_enabled || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate draft"}</Button>
-                  {aiDraft && suggestedFields.length > 0 && <span className="self-center text-xs text-[#9AA4B8]">Suggestions ready — review below</span>}
-                </div>
-                {aiError && <p className="text-xs leading-5 text-amber-300">{aiError}</p>}
-                {aiDraft && (
-                  <div className="rounded-xl border border-[#03245e] bg-[#01071d] p-3 space-y-2">
-                    <p className="text-xs font-semibold text-[#F5F5F7]">AI suggestions (click to apply):</p>
-                    {suggestedFields.map((f) => (
-                      <div key={f} className="flex items-center justify-between gap-2 rounded-xl border border-[#021640] bg-[#020102] px-3 py-2 text-xs">
-                        <span className="text-[#9AA4B8]">{f}: <span className="text-[#F5F5F7]">{String((aiDraft as Record<string, unknown>)[f] ?? aiDraft[f as keyof typeof aiDraft] ?? "")}</span></span>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => applySuggestion(f)}>Apply</Button>
-                      </div>
-                    ))}
-                    <p className="text-[11px] leading-4 text-[#9AA4B8]">Verify every field before publishing. If suggestions are unavailable, you can write every detail yourself.</p>
-                  </div>
-                )}
-              </div>
+        <div className="space-y-2">
+          <Label htmlFor="image">Photo *</Label>
+          {imageUrl ? (
+            <div className="relative w-full max-w-sm overflow-hidden rounded-xl ring-1 ring-[#021640]/60">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="Listing preview — original photo" className="h-auto w-full object-cover" />
+              <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); setUploadInfo(""); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>
             </div>
-
-            <div>
-              <Label htmlFor="title">Title *</Label>
-              <Input id="title" value={title} onChange={(e)=>setTitle(e.target.value)} maxLength={100} required className="mt-1.5 bg-[#020102]" placeholder="e.g. Engineering Mechanics by R.S. Khurmi" />
-              {suggestedFields.includes("title") && <Badge variant="outline" className="mt-1.5">AI suggested — confirm</Badge>}
-              {fieldErrors.title && <p className="mt-1 text-xs text-red-400">{String(fieldErrors.title)}</p>}
-            </div>
-
-            <div>
-              <Label htmlFor="description">Description *</Label>
-              <Textarea id="description" value={description} onChange={(e)=>setDescription(e.target.value)} maxLength={3000} required className="mt-1.5 bg-[#020102]" placeholder="Condition, usage, defects, pickup details…" rows={5} />
-              <p className="mt-1.5 text-xs text-[#9AA4B8]">{description.length}/3000</p>
-              {fieldErrors.description && <p className="text-xs text-red-400">{String(fieldErrors.description)}</p>}
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="price">Price (₹) *</Label>
-                <Input id="price" type="number" step={1} inputMode="numeric" min={0} max={10000000} value={price} onChange={(e)=>setPrice(e.target.value)} required className="mt-1.5 bg-[#020102]" placeholder="500" />
-                {(priceWarning || priceZeroWarning) && <p className="mt-1.5 flex items-center gap-1 text-xs text-amber-300"><AlertTriangle className="size-3" />{priceWarning ?? priceZeroWarning}</p>}
-                {fieldErrors.price_inr && <p className="mt-1 text-xs text-red-400">{String(fieldErrors.price_inr)}</p>}
-              </div>
-              <div>
-                <Label htmlFor="category">Category *</Label>
-                <Select id="category" required value={categoryId} onChange={(e)=>setCategoryId(e.target.value)} className="mt-1.5 bg-[#020102]">
-                  <option value="" disabled>Choose a category</option>
-                  {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="condition">Condition *</Label>
-                <Select id="condition" required value={condition} onChange={(e)=>setCondition(e.target.value)} className="mt-1.5 bg-[#020102]">
-                  <option value="" disabled>Choose a condition</option>
-                  {CONDITIONS.map((c) => <option key={c} value={c}>{CONDITION_LABELS[c]}</option>)}
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="block">Hostel block *</Label>
-                <Input id="block" value={block} onChange={(e)=>setBlock(e.target.value)} maxLength={60} required className="mt-1.5 bg-[#020102]" placeholder="E.g. A Block, GH-2" />
-                {fieldErrors.hostel_block && <p className="mt-1 text-xs text-red-400">{String(fieldErrors.hostel_block)}</p>}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="tags">Tags (optional, max 12)</Label>
-              <div className="mt-1.5 flex gap-2">
-                <Input id="tags" value={tagInput} onChange={(e)=>setTagInput(e.target.value)} placeholder="Add tag and press Enter" maxLength={32} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}}} className="bg-[#020102]" />
-                <Button type="button" variant="secondary" onClick={()=>{ if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}} disabled={tags.length>=12}>Add</Button>
-              </div>
-              {tags.length>0 && <div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t,i)=><span key={i} className="inline-flex items-center gap-1 rounded-full border border-[#021640] bg-[#021640] px-2.5 py-1 text-xs text-[#F5F5F7]">{t}<button type="button" onClick={()=>setTags(tags.filter((_,idx)=>idx!==i))} aria-label={`Remove ${t}`} className="rounded-full p-0.5 hover:bg-[#03245e]"><X className="size-3" /></button></span>)}</div>}
-            </div>
-
-            <label className="flex items-start gap-2.5 rounded-xl border border-[#021640] bg-[#020102] p-3 text-sm leading-5">
-              <input type="checkbox" checked={confirmed} onChange={(e)=>setConfirmed(e.target.checked)} required className="mt-0.5 size-4 accent-[#03245e]" />
-              <span className="text-[#9AA4B8]">I confirm the details above are accurate. I understand AI suggestions must be verified and the original photo is the source of truth.</span>
+          ) : (
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-[#020102] px-6 py-10 text-center ring-1 ring-dashed ring-[#021640] transition hover:ring-[#03245e] focus-within:ring-[#03245e]">
+              <Upload className="size-5 text-[#9AA4B8]" />
+              <span className="text-sm font-medium text-[#F5F5F7]">{uploading ? "Compressing…" : "Choose photo"}</span>
+              <span className="text-xs text-[#9AA4B8]">JPEG, PNG or WebP — auto-compressed</span>
+              <input type="file" id="image" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
             </label>
+          )}
+          {imageUrl && (
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#020102] px-3 py-1.5 text-xs font-medium text-[#9AA4B8] ring-1 ring-[#021640]/60 hover:text-[#F5F5F7] hover:ring-[#03245e]">
+              <Upload className="size-3.5" /> Replace photo
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
+            </label>
+          )}
+          {uploadInfo && <p className="text-xs leading-5 text-[#9AA4B8]" role="status" aria-live="polite">{uploadInfo}</p>}
+          {fieldErrors.image_path && <p className="text-xs text-red-400" role="alert">{fieldErrors.image_path}</p>}
+          {!imagePath && !uploading && <p className="text-xs text-[#9AA4B8]">Photo required. Original remains the source of truth.</p>}
+        </div>
 
-            {error && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">{error}</p>}
-
-            <div className="flex gap-2 pt-1">
-              <Button type="submit" variant="primary" disabled={submitting || !canWrite || !imagePath || !confirmed || uploading}>{submitting ? "Saving…" : initialListing ? "Save changes" : "Publish listing"}</Button>
-              <Button type="button" variant="ghost" onClick={()=>router.back()}>Cancel</Button>
+        <div className="rounded-xl bg-[#01071d] p-3.5 ring-1 ring-[#021640]/50">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[#9AA4B8]"><Sparkles className="size-3.5 text-[#82b7ff]" /> Optional AI help</div>
+          <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">Never auto-publishes. Apply suggestions one by one and verify.</p>
+          <div className="mt-3 space-y-2.5">
+            <div>
+              <Label htmlFor="transcript" className="normal-case tracking-normal">Describe the item (for AI draft)</Label>
+              <div className="mt-1.5 flex gap-2">
+                <Textarea id="transcript" placeholder="e.g. Used engineering mechanics book, 3rd edition…" value={transcript} onChange={(e)=>setTranscript(e.target.value)} className="flex-1 bg-[#020102]" rows={2} />
+                <Button type="button" variant="secondary" size="icon" onClick={toggleRecording} disabled={!canWrite || (!recording && aiLoading) || !session?.ai_enabled} aria-label={recording ? "Stop recording" : "Start voice recording"} title={recording ? "Stop" : "Record voice"} className="shrink-0">
+                  <Mic className={recording ? "text-red-400 animate-pulse" : ""} />
+                </Button>
+              </div>
             </div>
-        </CardContent>
-      </Card>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="primary" size="sm" onClick={handleAiDraft} disabled={aiLoading || !canWrite || !session?.ai_enabled || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate draft"}</Button>
+              {aiLoading && <span className="text-xs text-[#9AA4B8]" role="status">Working…</span>}
+              {!aiLoading && aiDraft && suggestedFields.length > 0 && <span className="text-xs text-[#9AA4B8]">Suggestions ready</span>}
+            </div>
+            {aiError && <p className="text-xs leading-5 text-amber-300" role="alert">{aiError}</p>}
+            {aiDraft && suggestedFields.length > 0 && (
+              <div className="space-y-2 rounded-lg bg-[#020102] p-2.5 ring-1 ring-[#021640]/50">
+                <p className="text-xs font-medium text-[#F5F5F7]">Suggestions — tap Apply to use:</p>
+                {suggestedFields.map((f) => (
+                  <div key={f} className="flex items-center justify-between gap-2 rounded-full bg-[#01071d] px-3 py-2 text-xs ring-1 ring-[#021640]/40">
+                    <span className="min-w-0 flex-1 truncate text-[#9AA4B8]">{f}: <span className="text-[#F5F5F7]">{String((aiDraft as Record<string, unknown>)[f] ?? aiDraft[f as keyof typeof aiDraft] ?? "")}</span></span>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0" onClick={() => applySuggestion(f)}>Apply</Button>
+                  </div>
+                ))}
+                <p className="text-[11px] leading-4 text-[#9AA4B8]">Manual entry always works if AI is unavailable.</p>
+              </div>
+            )}
+            {!session?.ai_enabled && canWrite && <p className="text-xs text-[#9AA4B8]">AI is off — fill fields manually below.</p>}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="title">Title *</Label>
+            <Input id="title" value={title} onChange={(e)=>setTitle(e.target.value)} maxLength={100} required className="mt-1.5 bg-[#020102]" placeholder="e.g. Engineering Mechanics by R.S. Khurmi" />
+            {suggestedFields.includes("title") && <Badge variant="outline" className="mt-1.5">AI suggested — confirm</Badge>}
+            {fieldErrors.title && <p className="mt-1 text-xs text-red-400" role="alert">{String(fieldErrors.title)}</p>}
+          </div>
+
+          <div>
+            <Label htmlFor="description">Description *</Label>
+            <Textarea id="description" value={description} onChange={(e)=>setDescription(e.target.value)} maxLength={3000} required className="mt-1.5 bg-[#020102]" placeholder="Condition, usage, defects, pickup details…" rows={5} />
+            <p className="mt-1 text-xs text-[#9AA4B8]">{description.length}/3000</p>
+            {fieldErrors.description && <p className="text-xs text-red-400" role="alert">{String(fieldErrors.description)}</p>}
+          </div>
+
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="price">Price (₹) *</Label>
+              <Input id="price" type="number" step={1} inputMode="numeric" min={0} max={10000000} value={price} onChange={(e)=>setPrice(e.target.value)} required className="mt-1.5 bg-[#020102]" placeholder="500" />
+              {priceWarning && <p className="mt-1.5 flex items-center gap-1 text-xs text-amber-300"><AlertTriangle className="size-3" />{priceWarning}</p>}
+              {fieldErrors.price_inr && <p className="mt-1 text-xs text-red-400" role="alert">{String(fieldErrors.price_inr)}</p>}
+            </div>
+            <div>
+              <Label htmlFor="category">Category *</Label>
+              <Select id="category" required value={categoryId} onChange={(e)=>setCategoryId(e.target.value)} className="mt-1.5 bg-[#020102]">
+                <option value="" disabled>Choose a category</option>
+                {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="condition">Condition *</Label>
+              <Select id="condition" required value={condition} onChange={(e)=>setCondition(e.target.value)} className="mt-1.5 bg-[#020102]">
+                <option value="" disabled>Choose a condition</option>
+                {CONDITIONS.map((c) => <option key={c} value={c}>{CONDITION_LABELS[c]}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="block">Hostel block *</Label>
+              <Input id="block" value={block} onChange={(e)=>setBlock(e.target.value)} maxLength={60} required className="mt-1.5 bg-[#020102]" placeholder="E.g. A Block, GH-2" />
+              {fieldErrors.hostel_block && <p className="mt-1 text-xs text-red-400" role="alert">{String(fieldErrors.hostel_block)}</p>}
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="tags">Tags (optional, max 12)</Label>
+            <div className="mt-1.5 flex gap-2">
+              <Input id="tags" value={tagInput} onChange={(e)=>setTagInput(e.target.value)} placeholder="Add tag and press Enter" maxLength={32} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}}} className="bg-[#020102]" />
+              <Button type="button" variant="secondary" size="sm" onClick={()=>{ if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}} disabled={tags.length>=12}>Add</Button>
+            </div>
+            {tags.length>0 && <div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t,i)=><span key={i} className="inline-flex items-center gap-1 rounded-full bg-[#01071d] px-2.5 py-1 text-xs text-[#F5F5F7] ring-1 ring-[#021640]/40">{t}<button type="button" onClick={()=>setTags(tags.filter((_,idx)=>idx!==i))} aria-label={`Remove ${t}`} className="rounded-full p-0.5 hover:bg-[#03245e] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white"><X className="size-3" /></button></span>)}</div>}
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-xl bg-[#020102] p-3 text-sm leading-5 ring-1 ring-[#021640]/60 has-[:checked]:ring-[#03245e]">
+            <input type="checkbox" checked={confirmed} onChange={(e)=>setConfirmed(e.target.checked)} required className="mt-0.5 size-4 accent-[#03245e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa]" />
+            <span className="text-[#9AA4B8]">I confirm details are accurate. AI suggestions are verified. The original photo is the source of truth.</span>
+          </label>
+
+          {error && <p role="alert" className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">{error}</p>}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button type="submit" variant="primary" disabled={submitting || !canWrite || !imagePath || !confirmed || uploading}>{submitting ? "Saving…" : initialListing ? "Save changes" : "Publish listing"}</Button>
+            <Button type="button" variant="ghost" onClick={()=>router.back()}>Cancel</Button>
+          </div>
+        </div>
+      </div>
     </form>
   );
 }

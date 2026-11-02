@@ -27,31 +27,31 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-[#021640] bg-[#01071d]/95 backdrop-blur supports-[backdrop-filter]:bg-[#01071d]/85">
+    <header className="sticky top-0 z-40 w-full border-b border-[#021640]/40 bg-[#020102]/95 backdrop-blur supports-[backdrop-filter]:bg-[#020102]/85">
       {isDemo && (
-        <div className="flex w-full flex-wrap items-center justify-center gap-2 bg-[#021640] px-4 py-1.5 text-center text-xs">
-          <span className="rounded bg-[#03245e] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#F5F5F7]">Demo mode</span>
-          <span className="text-[#cbd5e1]">Sample listings · publishing and messages are not yet available</span>
+        <div className="flex w-full flex-wrap items-center justify-center gap-2 bg-[#220815] px-4 py-1.5 text-center text-xs">
+          <span className="rounded bg-[#03245e] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#F5F5F7]">Demo</span>
+          <span className="text-[#F5F5F7]/80">Sample listings · publishing paused</span>
         </div>
       )}
-      <div className="mx-auto flex h-[56px] max-w-7xl items-center gap-3 px-4 md:gap-4 md:px-5">
-        <Link href="/" className="flex shrink-0 items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-md bg-[#03245e] text-[13px] font-bold tracking-tight text-white">R♥</span>
-          <span className="hidden text-[15px] font-semibold tracking-tight text-[#F5F5F7] sm:inline">Re-Love</span>
+      <div className="mx-auto flex h-[52px] max-w-7xl items-center gap-3 px-4 md:gap-4 md:px-5">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5 rounded-full px-1 py-1 transition hover:bg-[#01071d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]">
+          <span className="flex size-7 items-center justify-center rounded-full bg-[#03245e] text-[12px] font-bold tracking-tight text-white">R♥</span>
+          <span className="hidden text-[14px] font-semibold tracking-tight text-[#F5F5F7] sm:inline">Re-Love</span>
         </Link>
 
         {/* Desktop nav */}
-        <nav aria-label="Primary" className="hidden items-center gap-0.5 text-[13px] md:flex">
-          <Link href="/" className={cn("rounded-full px-3 py-1.5 font-medium transition", pathname === "/" ? "bg-[#021640] text-[#F5F5F7]" : "text-[#9AA4B8] hover:bg-[#020102] hover:text-[#F5F5F7]")}>Home</Link>
-          <Link href="/categories" className={cn("rounded-full px-3 py-1.5 font-medium transition", pathname.startsWith("/categories") ? "bg-[#021640] text-[#F5F5F7]" : "text-[#9AA4B8] hover:bg-[#020102] hover:text-[#F5F5F7]")}>Categories</Link>
-          <Link href="/search" className={cn("rounded-full px-3 py-1.5 font-medium transition", pathname.startsWith("/search") ? "bg-[#021640] text-[#F5F5F7]" : "text-[#9AA4B8] hover:bg-[#020102] hover:text-[#F5F5F7]")}>Search</Link>
+        <nav aria-label="Primary" className="hidden items-center gap-1 text-[13px] md:flex">
+          <Link href="/" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-1 focus-visible:ring-offset-[#020102]", pathname === "/" ? "bg-[#03245e] text-white" : "text-[#9AA4B8] hover:bg-[#01071d] hover:text-[#F5F5F7]")}>Home</Link>
+          <Link href="/categories" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-1 focus-visible:ring-offset-[#020102]", pathname.startsWith("/categories") ? "bg-[#03245e] text-white" : "text-[#9AA4B8] hover:bg-[#01071d] hover:text-[#F5F5F7]")}>Categories</Link>
+          <Link href="/search" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-1 focus-visible:ring-offset-[#020102]", pathname.startsWith("/search") ? "bg-[#03245e] text-white" : "text-[#9AA4B8] hover:bg-[#01071d] hover:text-[#F5F5F7]")}>Search</Link>
         </nav>
 
         {/* Search - desktop */}
         <form onSubmit={onSearch} className="hidden flex-1 items-center gap-2 md:flex md:max-w-[360px]">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#9AA4B8]" aria-hidden="true" />
-            <Input aria-label="Search listings" placeholder="Search textbooks, cycles…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 pl-9 text-[13px]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#9AA4B8]" aria-hidden="true" />
+            <Input aria-label="Search listings" placeholder="Search textbooks, cycles…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 bg-[#020102] pl-9 text-[13px] border-[#021640]/70" />
           </div>
         </form>
 
@@ -59,7 +59,7 @@ export function SiteHeader() {
           <Button asChild variant="primary" size="sm" className="hidden rounded-full md:inline-flex">
             <Link href="/sell"><Plus className="size-3.5" /> Sell</Link>
           </Button>
-          <Link aria-label="Sell" href="/sell" className="inline-flex size-8 items-center justify-center rounded-full bg-[#03245e] text-white transition hover:bg-[#04307d] md:hidden">
+          <Link aria-label="Sell" href="/sell" className="inline-flex size-8 items-center justify-center rounded-full bg-[#03245e] text-white transition hover:bg-[#04307d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102] md:hidden">
             <Plus className="size-4" />
           </Link>
 
@@ -69,17 +69,17 @@ export function SiteHeader() {
 
           {session?.user ? (
             <div className="flex items-center gap-1">
-              <Link href="/profile" aria-label="Profile" className="flex items-center gap-2 rounded-full px-1.5 py-1 transition hover:bg-[#021640]">
+              <Link href="/profile" aria-label="Profile" className="flex items-center gap-2 rounded-full px-1.5 py-1 transition hover:bg-[#01071d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]">
                 {session.user.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={session.user.avatar_url} alt={`${session.user.display_name} avatar`} className="size-7 rounded-full object-cover border border-[#021640]" />
+                  <img src={session.user.avatar_url} alt={`${session.user.display_name} avatar`} className="size-7 rounded-full object-cover border border-[#021640]/60" />
                 ) : (
-                  <span className="flex size-7 items-center justify-center rounded-full bg-[#021640] border border-[#03245e] text-xs font-medium text-[#F5F5F7]">{session.user.display_name.slice(0, 1).toUpperCase()}</span>
+                  <span className="flex size-7 items-center justify-center rounded-full bg-[#01071d] border border-[#021640] text-xs font-medium text-[#F5F5F7]">{session.user.display_name.slice(0, 1).toUpperCase()}</span>
                 )}
                 <span className="hidden max-w-[120px] truncate text-[13px] font-medium text-[#F5F5F7] lg:inline">{session.user.display_name}</span>
               </Link>
               <form action="/auth/logout" method="post">
-                <button aria-label="Sign out" type="submit" className="inline-flex size-8 items-center justify-center rounded-full text-[#9AA4B8] transition hover:bg-[#021640] hover:text-[#F5F5F7]">
+                <button aria-label="Sign out" type="submit" className="inline-flex size-8 items-center justify-center rounded-full text-[#9AA4B8] transition hover:bg-[#01071d] hover:text-[#F5F5F7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]">
                   <LogOut className="size-4" />
                 </button>
               </form>
@@ -93,11 +93,11 @@ export function SiteHeader() {
       </div>
 
       {/* Mobile search */}
-      <div className="border-t border-[#021640] px-4 py-2.5 md:hidden">
+      <div className="border-t border-[#021640]/30 px-4 py-2 md:hidden">
         <form onSubmit={onSearch} className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#9AA4B8]" aria-hidden="true" />
-            <Input aria-label="Search listings" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 pl-9 text-[13px]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#9AA4B8]" aria-hidden="true" />
+            <Input aria-label="Search listings" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 bg-[#020102] pl-9 text-[13px]" />
           </div>
           <Button type="submit" size="sm" variant="primary" className="rounded-full px-5">Go</Button>
         </form>

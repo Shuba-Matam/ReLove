@@ -17,8 +17,8 @@ export function CategoryChips({ activeSlug }: { activeSlug?: string | null }) {
     return qs ? `${pathname}?${qs}` : pathname;
   };
   return (
-    <nav aria-label="Listing categories" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-none md:mx-0 md:px-0">
-      {[{ id: "all", slug: "", name: "All finds", icon: "Shapes" }, ...CATEGORIES].map((category) => {
+    <nav aria-label="Listing categories" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 scrollbar-none md:mx-0 md:px-0">
+      {[{ id: "all", slug: "", name: "All", icon: "Shapes" }, ...CATEGORIES].map((category) => {
         const active = (current || "") === category.slug;
         return (
           <Link
@@ -26,8 +26,8 @@ export function CategoryChips({ activeSlug }: { activeSlug?: string | null }) {
             href={href(category.slug)}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium transition",
-              active ? "border-[#03245e] bg-[#03245e] text-white" : "border-[#021640] bg-[#01071d] text-[#9AA4B8] hover:border-[#03245e] hover:bg-[#020102] hover:text-[#F5F5F7]"
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]",
+              active ? "bg-[#03245e] text-white" : "bg-[#020102] text-[#9AA4B8] ring-1 ring-[#021640]/60 hover:bg-[#01071d] hover:text-[#F5F5F7] hover:ring-[#03245e]"
             )}
           >
             <CategoryIcon name={category.icon} className="size-3.5" aria-hidden="true" />{category.name}

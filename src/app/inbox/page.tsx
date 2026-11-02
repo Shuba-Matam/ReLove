@@ -33,38 +33,38 @@ export default function InboxPage() {
 
   if (isDemo) {
     return (
-      <div className="mx-auto max-w-2xl rounded-xl border border-[#021640] bg-[#01071d] p-8 text-center">
-        <h1 className="text-lg font-semibold text-[#F5F5F7]">Inbox — demo mode</h1>
-        <p className="mt-2 text-sm text-[#9AA4B8]">Messaging is read-only in demo. Sign in to send and receive messages.</p>
-        <Button asChild variant="primary" className="mt-4"><Link href="/login">Sign in with Google</Link></Button>
+      <div className="mx-auto max-w-2xl rounded-xl bg-[#220815] p-8 text-center ring-1 ring-[#4a102f]">
+        <h1 className="text-base font-semibold text-[#F5F5F7]">Inbox — demo</h1>
+        <p className="mt-2 text-sm text-[#f5c6d8]">Messaging is read-only in demo. Sign in to send and receive.</p>
+        <Button asChild variant="primary" size="sm" className="mt-4"><Link href="/login">Sign in with Google</Link></Button>
       </div>
     );
   }
 
   if (!session?.user && !loading) {
     return (
-      <div className="mx-auto max-w-2xl rounded-xl border border-[#021640] bg-[#01071d] p-8 text-center">
-        <h1 className="text-lg font-semibold text-[#F5F5F7]">Sign in to view messages</h1>
-        <Button asChild variant="primary" className="mt-4"><Link href="/login">Sign in</Link></Button>
+      <div className="mx-auto max-w-2xl rounded-xl bg-[#020102] p-8 text-center ring-1 ring-[#021640]/50">
+        <h1 className="font-medium text-[#F5F5F7]">Sign in to view messages</h1>
+        <Button asChild variant="primary" size="sm" className="mt-4"><Link href="/login">Sign in</Link></Button>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <div className="border-b border-[#021640] pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight text-[#F5F5F7]">Inbox</h1>
-        <p className="mt-1 text-sm leading-6 text-[#9AA4B8]">Conversations about your listings.</p>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <div className="pb-2">
+        <h1 className="text-xl font-semibold tracking-tight text-[#F5F5F7]">Inbox</h1>
+        <p className="mt-1 text-sm text-[#9AA4B8]">Conversations about your listings.</p>
       </div>
       {loading && <p className="text-sm text-[#9AA4B8]">Loading conversations…</p>}
-      {error && <p role="alert" className="rounded-xl border border-[#4a102f] bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8]">{error}</p>}
-      {threads && threads.length === 0 && <div className="rounded-2xl border border-dashed border-[#021640] bg-[#01071d] p-8 text-center text-sm leading-6 text-[#9AA4B8]">No conversations yet. Visit a listing and tap “Message seller”.</div>}
+      {error && <p role="alert" className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">{error}</p>}
+      {threads && threads.length === 0 && <div className="py-10 text-center text-sm leading-6 text-[#9AA4B8]">No conversations yet. Visit a listing and tap “Message seller”.</div>}
       {threads && threads.length > 0 && (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {threads.map((t) => (
-            <Link key={t.id} href={`/inbox/${t.id}`} className="flex items-center gap-3 rounded-2xl border border-[#021640] bg-[#01071d] p-3 transition hover:border-[#03245e] hover:bg-[#020102]">
+            <Link key={t.id} href={`/inbox/${t.id}`} className="flex items-center gap-3 rounded-xl bg-[#020102] p-3 ring-1 ring-[#021640]/50 transition hover:ring-[#03245e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={t.listing.image_url} alt={t.listing.title} className="size-14 rounded-xl object-cover border border-[#021640]" />
+              <img src={t.listing.image_url} alt={t.listing.title} className="size-12 rounded-lg object-cover ring-1 ring-[#021640]/40" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-[#F5F5F7]">{t.listing.title} — {t.participant.display_name}</p>
                 <p className="truncate text-xs leading-5 text-[#9AA4B8]">{t.last_message?.body ?? "No messages yet"}</p>
