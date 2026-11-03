@@ -206,6 +206,10 @@ function createMockSupabase(userId: string) {
         getPublicUrl: (path: string) => ({
           data: { publicUrl: `https://example.supabase.co/storage/v1/object/public/${bucket}/${path}` },
         }),
+        list: async (path: string, options: { search: string }) => ({
+          data: [...storageMap.keys()].filter((name) => name.startsWith(`${path}/`) && name.split("/")[1] === options.search).map((name) => ({ name: name.split("/")[1] })),
+          error: null,
+        }),
       }),
     },
     auth: {
@@ -838,47 +842,16 @@ describe("real draft POST via production route (cap429, payment503, timeout503, 
   });
 });
 
-describe("real cutout POST via production route (photo swap, upload fail, cached path/url, stale pricebook)", () => {
-  it("photo replaced between reads/save: old cutout not applied to new image", async () => {
+describe("real prepublish cutout POST via production route", () => {
+  it("generates before publication without inserting or mutating a listing", async () => {
     const listingId = randomUUID();
     const imagePathA = `${seller}/${randomUUID()}.jpg`;
-    const imagePathB = `${seller}/${randomUUID()}.jpg`;
     const bufA = await seedImage(seller, imagePathA, 100, 100);
-    await seedImage(seller, imagePathB, 100, 100);
     await createListing(listingId, seller, imagePathA, "Chair A");
     const { requireUser } = await import("@/lib/server/auth");
     const { createMeteringClient } = await import("@/lib/ai/meter");
     const { makeCutout } = await import("@/lib/ai/cutout");
     const mockSupabase = createMockSupabase(seller);
-    let listingsSelectCount = 0;
-    const origFrom = mockSupabase.from.bind(mockSupabase);
-    mockSupabase.from = (table: string) => {
-      if (table === "listings") {
-        const base = origFrom(table) as { select: (cols: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } & Record<string, unknown> } & Record<string, unknown>;
-        const origSelect = base.select as (cols: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } & Record<string, unknown>;
-        base.select = (cols: string) => {
-          const builder = origSelect(cols) as { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } & Record<string, unknown>;
-          const origMaybeSingle = builder.maybeSingle as () => Promise<{ data: unknown; error: unknown }>;
-          builder.maybeSingle = async () => {
-            listingsSelectCount++;
-            if (listingsSelectCount === 1) {
-              return { data: { id: listingId, seller_id: seller, image_path: imagePathA, title: "Chair A", ai_status: "none", cutout_path: null, cutout_url: null }, error: null };
-            }
-            if (listingsSelectCount === 2) {
-              await asService("update public.listings set image_path=$1, image_url=$2 where id=$3", [
-                imagePathB,
-                `https://example.supabase.co/storage/v1/object/public/listing-images/${imagePathB}`,
-                listingId,
-              ]);
-            }
-            return origMaybeSingle();
-          };
-          return builder;
-        };
-        return base;
-      }
-      return origFrom(table);
-    };
     const origStorageFrom = mockSupabase.storage.from.bind(mockSupabase.storage);
     mockSupabase.storage.from = (bucket: string) => {
       const base = origStorageFrom(bucket);
@@ -899,13 +872,16 @@ describe("real cutout POST via production route (photo swap, upload fail, cached
     (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
     (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(bufA);
     const { POST } = await import("@/app/api/ai/cutout/route");
-    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePathA, prompt: "chair" });
     const res = await POST(req as unknown as Request);
-    expect([409, 503]).toContain(res.status);
+    expect(res.status).toBe(200);
     const listing = await asService("select image_path, cutout_path, ai_status from public.listings where id=$1", [listingId]);
     const row = listing.rows[0] as Record<string, unknown>;
-    expect(row.image_path).toBe(imagePathB);
+    expect(row.image_path).toBe(imagePathA);
     expect(row.cutout_path).toBeNull();
+    const op = await asService("select listing_id,result from public.ai_operations where feature='cutout' order by created_at desc limit 1");
+    expect((op.rows[0] as Record<string, unknown>).listing_id).toBeNull();
+    expect((op.rows[0] as { result: { source_image_path: string } }).result.source_image_path).toBe(imagePathA);
   });
 
   it("upload failure not cached done: complete marked failed, next reserve fresh", async () => {
@@ -930,10 +906,11 @@ describe("real cutout POST via production route (photo swap, upload fail, cached
     };
     (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
     (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
     const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
     (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(processed);
     const { POST } = await import("@/app/api/ai/cutout/route");
-    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePath, prompt: "chair" });
     const res = await POST(req as unknown as Request);
     expect(res.status).toBe(503);
     const op = await asService("select status from public.ai_operations where feature='cutout' order by created_at desc limit 1");
@@ -954,16 +931,14 @@ describe("real cutout POST via production route (photo swap, upload fail, cached
     const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
     (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(processed);
     const { POST } = await import("@/app/api/ai/cutout/route");
-    const req1 = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const req1 = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePath, prompt: "chair" });
     const res1 = await POST(req1 as unknown as Request);
     expect(res1.status).toBe(200);
-    const listingAfter = await asService("select cutout_path, cutout_url from public.listings where id=$1", [listingId]);
-    const rowAfter = listingAfter.rows[0] as Record<string, unknown>;
-    expect(rowAfter.cutout_path).toBeTruthy();
-    expect(rowAfter.cutout_url).toBeTruthy();
-    expect((rowAfter.cutout_url as string).endsWith(rowAfter.cutout_path as string)).toBe(true);
+    const body1 = await res1.json() as { data: { cutout_path: string; cutout_url: string; operation_id: string } };
+    expect(body1.data.cutout_url.endsWith(body1.data.cutout_path)).toBe(true);
+    expect(body1.data.operation_id).toBeTruthy();
     (makeCutout as unknown as ReturnType<typeof vi.fn>).mockClear();
-    const req2 = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const req2 = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePath, prompt: "chair" });
     const res2 = await POST(req2 as unknown as Request);
     expect(res2.status).toBe(200);
     expect((makeCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(0);
@@ -971,7 +946,7 @@ describe("real cutout POST via production route (photo swap, upload fail, cached
     expect(body2.data.status).toBe("done");
   });
 
-  it("already persisted done cutout returns without provider", async () => {
+  it("a different short object prompt is a distinct source-bound operation", async () => {
     const listingId = randomUUID();
     const imagePath = `${seller}/${randomUUID()}.jpg`;
     const cutoutPath = `${seller}/${randomUUID()}.jpg`;
@@ -980,21 +955,17 @@ describe("real cutout POST via production route (photo swap, upload fail, cached
     storageMap.set(cutoutPath, { buffer: cutoutBuf, type: "image/jpeg" });
     await asUserWithId(seller, "insert into storage.objects(bucket_id,name) values($1,$2) on conflict do nothing", ["listing-images", cutoutPath]);
     await createListing(listingId, seller, imagePath);
-    await asService("update public.listings set cutout_path=$1, cutout_url=$2, ai_status='done' where id=$3", [
-      cutoutPath,
-      `https://example.supabase.co/storage/v1/object/public/listing-images/${cutoutPath}`,
-      listingId,
-    ]);
     const { requireUser } = await import("@/lib/server/auth");
     const { makeCutout } = await import("@/lib/ai/cutout");
     const mockSupabase = createMockSupabase(seller);
     (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
     (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(cutoutBuf);
     const { POST } = await import("@/app/api/ai/cutout/route");
-    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
-    const res = await POST(req as unknown as Request);
-    expect(res.status).toBe(200);
-    expect((makeCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(0);
+    const req1 = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePath, prompt: "chair" });
+    const req2 = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePath, prompt: "armchair" });
+    expect((await POST(req1 as unknown as Request)).status).toBe(200);
+    expect((await POST(req2 as unknown as Request)).status).toBe(200);
+    expect((makeCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
   });
 
   it("stale pricebook fingerprint =>0 provider", async () => {
@@ -1047,7 +1018,7 @@ describe("real cutout POST via production route (photo swap, upload fail, cached
       });
     });
     const { POST } = await import("@/app/api/ai/cutout/route");
-    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { image_path: imagePath, prompt: "chair" });
     const resPromise = POST(req as unknown as Request);
     const res = await Promise.race([
       resPromise,

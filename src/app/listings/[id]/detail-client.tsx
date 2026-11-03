@@ -17,9 +17,6 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
   const [reportOpen, setReportOpen] = React.useState(false);
   const [contactLoading, setContactLoading] = React.useState(false);
   const [contactError, setContactError] = React.useState("");
-  const [processing, setProcessing] = React.useState(false);
-  const [cutoutMessage, setCutoutMessage] = React.useState("");
-  async function createCutout() { setProcessing(true); setCutoutMessage(""); try { const response = await fetch("/api/ai/cutout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({listing_id:listing.id})}); const result = await response.json(); if(!response.ok) throw new Error(result.error?.message || "Cutout unavailable. Your original is unchanged."); router.refresh(); setCutoutMessage("Cutout ready. You can switch back to your original at any time."); } catch(error) { setCutoutMessage(error instanceof Error ? error.message : "Cutout unavailable. Your original is unchanged."); } finally { setProcessing(false); } }
   const isOwner = session?.user?.id === listing.seller_id;
   const isDemo = mode === "demo" || session?.mode === "demo";
 
@@ -48,9 +45,7 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
   return (
     <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8">
       <div>
-        <ImageToggle imageUrl={listing.image_url} cutoutUrl={listing.cutout_url} title={listing.title} />
-        {isOwner && (session?.ai_features?.cutout ?? session?.ai_enabled) && !listing.cutout_url && <Button className="mt-3" variant="secondary" size="sm" disabled={processing} onClick={createCutout}>{processing ? "Preparing cutout…" : "Create optional cutout"}</Button>}
-        {cutoutMessage && <p role="status" className="mt-2 text-sm text-[#9AA4B8]">{cutoutMessage}</p>}
+        <ImageToggle imageUrl={listing.image_url} cutoutUrl={listing.cutout_url} title={listing.title} displayMode={listing.photo_display_mode} />
       </div>
 
       <div className="space-y-5">

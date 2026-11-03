@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/server/auth";
 import { listingUpdateSchema } from "@/lib/validation";
 import { z } from "zod";
 import type { Listing } from "@/lib/marketplace";
+import { validateCutoutSelection } from "@/lib/server/cutout-selection";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ function mapListingRow(row: Record<string, unknown>): Listing {
     image_url: row.image_url as string,
     image_path: row.image_path as string,
     cutout_url: (row.cutout_url as string | null) ?? null,
+    cutout_path: (row.cutout_path as string | null) ?? null,
+    cutout_operation_id: (row.cutout_operation_id as string | null) ?? null,
+    photo_display_mode: (row.photo_display_mode as Listing["photo_display_mode"]) ?? ((row.cutout_path as string | null) ? "both" : "original"),
     tags: (row.tags as string[]) ?? [],
     ai_status: (row.ai_status as Listing["ai_status"]) ?? "none",
     created_at: row.created_at as string,
@@ -99,7 +103,7 @@ export const PATCH = withApi(async (request: NextRequest, context: unknown) => {
   // Fetch existing to ensure owner and to handle orphan logic
   const { data: existing, error: fetchErr } = await supabase
     .from("listings")
-    .select("id, seller_id, image_path, cutout_path")
+    .select("id, seller_id, image_path, cutout_path, cutout_url, cutout_operation_id, photo_display_mode")
     .eq("id", id)
     .single();
 
@@ -115,7 +119,16 @@ export const PATCH = withApi(async (request: NextRequest, context: unknown) => {
     throw new ApiProblem(403, "forbidden", "You do not own this listing.");
   }
 
-  const existingRow = existing as { id: string; seller_id: string; image_path: string; cutout_path: string | null };
+  const existingRow = existing as { id: string; seller_id: string; image_path: string; cutout_path?: string | null; cutout_url?: string | null; cutout_operation_id?: string | null; photo_display_mode?: Listing["photo_display_mode"] };
+  const targetImagePath = body.image_path ?? existingRow.image_path;
+  const submittedCutout = body.cutout === undefined ? undefined : await validateCutoutSelection(supabase as never, user.id, targetImagePath, body.cutout);
+  const targetCutout = submittedCutout === undefined
+    ? (targetImagePath === existingRow.image_path && existingRow.cutout_path ? { cutout_path: existingRow.cutout_path, cutout_url: existingRow.cutout_url } : null)
+    : submittedCutout;
+  const targetMode = body.photo_display_mode ?? (targetImagePath === existingRow.image_path ? (existingRow.photo_display_mode ?? (existingRow.cutout_path ? "both" : "original")) : "original");
+  if (targetMode !== "original" && !targetCutout) {
+    throw new ApiProblem(400, "validation_error", "Generate and preview a cutout before choosing that display option.", { photo_display_mode: ["A completed cutout is required."] });
+  }
 
   // If category_id provided, verify exists
   if (body.category_id) {
@@ -135,7 +148,21 @@ export const PATCH = withApi(async (request: NextRequest, context: unknown) => {
   if (body.image_path !== undefined) {
     update.image_path = body.image_path;
     if (image_url) update.image_url = image_url;
+    if (body.image_path !== existingRow.image_path && submittedCutout === undefined) {
+      update.cutout_path = null;
+      update.cutout_url = null;
+      update.cutout_operation_id = null;
+      update.ai_status = "none";
+      update.photo_display_mode = "original";
+    }
   }
+  if (submittedCutout !== undefined) {
+    update.cutout_path = submittedCutout?.cutout_path ?? null;
+    update.cutout_url = submittedCutout?.cutout_url ?? null;
+    update.cutout_operation_id = body.cutout?.operation_id ?? null;
+    update.ai_status = submittedCutout ? "done" : "none";
+  }
+  if (body.photo_display_mode !== undefined) update.photo_display_mode = body.photo_display_mode;
   if (body.tags !== undefined) update.tags = body.tags;
   if (body.status !== undefined) {
     if (body.status !== "active" && body.status !== "sold") {

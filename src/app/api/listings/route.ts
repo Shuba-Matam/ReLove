@@ -7,6 +7,7 @@ import { json, ApiProblem, withApi, readJson } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/auth";
 import { listingSchema } from "@/lib/validation";
 import type { Listing } from "@/lib/marketplace";
+import { validateCutoutSelection } from "@/lib/server/cutout-selection";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,9 @@ function mapListingRow(row: Record<string, unknown>): Listing {
     image_url: row.image_url as string,
     image_path: row.image_path as string,
     cutout_url: (row.cutout_url as string | null) ?? null,
+    cutout_path: (row.cutout_path as string | null) ?? null,
+    cutout_operation_id: (row.cutout_operation_id as string | null) ?? null,
+    photo_display_mode: (row.photo_display_mode as Listing["photo_display_mode"]) ?? ((row.cutout_path as string | null) ? "both" : "original"),
     tags: (row.tags as string[]) ?? [],
     ai_status: (row.ai_status as Listing["ai_status"]) ?? "none",
     created_at: row.created_at as string,
@@ -86,6 +90,11 @@ export const POST = withApi(async (request: NextRequest) => {
     throw new ApiProblem(400, "validation_error", "Image not found. Please upload again.", { image_path: ["Referenced image does not exist in storage."] });
   }
 
+  const cutout = await validateCutoutSelection(supabase as never, user.id, input.image_path, input.cutout);
+  if (input.photo_display_mode !== "original" && !cutout) {
+    throw new ApiProblem(400, "validation_error", "Generate and preview a cutout before choosing that display option.", { photo_display_mode: ["A completed cutout is required."] });
+  }
+
   // Ensure category exists
   const { data: catExists, error: categoryError } = await supabase.from("categories").select("id").eq("id", input.category_id).maybeSingle();
   if (categoryError) throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Categories are temporarily unavailable. Please try again.");
@@ -103,9 +112,13 @@ export const POST = withApi(async (request: NextRequest) => {
     hostel_block: input.hostel_block,
     image_path: input.image_path,
     image_url,
+    cutout_path: cutout?.cutout_path ?? null,
+    cutout_url: cutout?.cutout_url ?? null,
+    cutout_operation_id: input.cutout?.operation_id ?? null,
+    photo_display_mode: input.photo_display_mode,
     tags: input.tags,
     status: "active" as const,
-    ai_status: "none" as const,
+    ai_status: cutout ? "done" as const : "none" as const,
   };
 
   const { data, error } = await supabase

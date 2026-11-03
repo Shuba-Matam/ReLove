@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { decodeMaskToRaster, parseImageStream, recordsOfKind } from "@meta-sam/parser";
 import { AiFailure, runGuardedAi, type UsageLedger } from "@/lib/ai/guard";
 import { draftRequestSchema, parseAiDraft, transcriptionResponseSchema } from "@/lib/ai/schemas";
 import { checkMask, priceWarning } from "@/lib/ai/rules";
 import { validateWav } from "@/lib/ai/audio";
 import { classifyProviderStatus, PROVIDER_LIMITS, getDraftProvider } from "@/lib/ai/provider";
+import sharp from "sharp";
 
 const draft = { title: "Desk chair", description: "A chair with a padded seat.", category_slug: "furniture", tags: ["chair", "seat"], condition_hint: null, brand: null, edition: null };
 const ledger = (): UsageLedger => ({ reserve: vi.fn(async () => ({ allowed: true, usageId: "usage" })), complete: vi.fn(async () => undefined) });
@@ -70,6 +72,20 @@ describe("AI failure drills", () => {
   });
 });
 describe("cutout mask quality", () => {
+  it("parses the installed SAM stream format into a bounded mask raster", async () => {
+    const outputText = '<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|>' +
+      "<|mask;x=0;y=0;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7`e.ioeAf6-k/#Xd8%dX9x(|>\n";
+    async function* events() {
+      yield { type: "response.output_text.delta", item_id: "message-1", output_index: 0, content_index: 0, delta: outputText };
+      yield { type: "response.output_text.done", item_id: "message-1", output_index: 0, content_index: 0, text: outputText };
+      yield { type: "response.completed" };
+    }
+    const result = await parseImageStream(events()).finalResult;
+    const mask = recordsOfKind(result.records, "mask")[0];
+    expect(result.outcome.status).toBe("completed");
+    expect(mask.bounds).toEqual({ left: 211, top: 228, right: 271, bottom: 255 });
+    expect(decodeMaskToRaster(mask.mask)).toHaveLength(27 * 60);
+  });
   it("rejects tiny, full-frame, fragmented, and dimension-mismatched masks", () => {
     expect(checkMask(new Uint8Array(100), 10, 10).reason).toBe("tiny");
     expect(checkMask(new Uint8Array(100).fill(1), 10, 10).reason).toBe("full_frame");
@@ -92,6 +108,19 @@ describe("cutout mask quality", () => {
   it("accepts coverage just above tiny threshold", () => {
     const mask = new Uint8Array(100); mask[0] = 1; mask[1] = 1;
     expect(checkMask(mask, 10, 10).valid).toBe(true);
+  });
+  it("composes a validated mask into a visible neutral background instead of returning the original", async () => {
+    const { composeCutout } = await import("@/lib/ai/cutout");
+    const width = 20; const height = 20;
+    const original = await sharp({ create: { width, height, channels: 3, background: { r: 190, g: 25, b: 30 } } }).jpeg().toBuffer();
+    const mask = new Uint8Array(width * height);
+    for (let y = 5; y < 15; y++) for (let x = 5; x < 15; x++) mask[y * width + x] = 255;
+    const cutout = await composeCutout(original, mask, width, height);
+    const { data } = await sharp(cutout).raw().toBuffer({ resolveWithObject: true });
+    const pixel = (x: number, y: number) => Array.from(data.subarray((y * width + x) * 3, (y * width + x) * 3 + 3));
+    expect(pixel(0, 0)).toEqual(expect.arrayContaining([expect.any(Number), expect.any(Number), expect.any(Number)]));
+    expect(pixel(0, 0)[0]).toBeGreaterThan(225);
+    expect(pixel(10, 10)[0]).toBeLessThan(220);
   });
 });
 describe("audio validation", () => {

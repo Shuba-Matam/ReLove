@@ -5,6 +5,7 @@ import type { Listing } from "@/lib/marketplace";
 
 export function ListingCard({ listing }: { listing: Listing }) {
   const sold = listing.status === "sold";
+  const coverUrl = listing.photo_display_mode === "cutout" && listing.cutout_url ? listing.cutout_url : listing.image_url;
   return (
     <Link
       href={`/listings/${listing.id}`}
@@ -13,7 +14,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
       <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[#01071d] ring-1 ring-[#021640]/60 group-hover:ring-[#03245e]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={listing.image_url || "/demo/books.svg"}
+          src={coverUrl || "/demo/books.svg"}
           alt={listing.title}
           className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.015]"
           loading="lazy"

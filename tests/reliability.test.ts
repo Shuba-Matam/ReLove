@@ -70,7 +70,7 @@ describe("live marketplace failure and pagination boundaries", () => {
   it("returns a cursor for the next populated page", async () => {
     const rows = [{ id: listingId }, { id: buyer }];
     database({ body: rows, range: "0-1/3" });
-    expect(await listListings({ limit: 2 })).toEqual({ data: rows, mode: "live", meta: { total: 3, next_cursor: 2 } });
+    expect(await listListings({ limit: 2 })).toEqual({ data: rows.map((row) => ({ ...row, photo_display_mode: "original" })), mode: "live", meta: { total: 3, next_cursor: 2 } });
   });
 
   it.each([0, 24])("recovers a range error with a verified total %i and preserves filters", async (total) => {

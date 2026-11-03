@@ -48,6 +48,23 @@ function sanitizePrompt(raw: string): string {
   return safe.length ? safe : "item";
 }
 
+export async function composeCutout(original: Buffer, alpha: Uint8Array, width: number, height: number): Promise<Buffer> {
+  if (alpha.length !== width * height) throw new AiFailure("MASK_INVALID", "The cutout mask did not match the photo.");
+  const rgb = await sharp(original, { limitInputPixels: 4000000 }).removeAlpha().raw().toBuffer();
+  if (rgb.length !== width * height * 3) throw new AiFailure("MASK_INVALID", "The cutout could not be composed safely.");
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let source = 0, target = 0, pixel = 0; source < rgb.length; source += 3, target += 4, pixel++) {
+    rgba[target] = rgb[source];
+    rgba[target + 1] = rgb[source + 1];
+    rgba[target + 2] = rgb[source + 2];
+    rgba[target + 3] = alpha[pixel];
+  }
+  return sharp(rgba, { raw: { width, height, channels: 4 } })
+    .flatten({ background: "#f2f1ed" })
+    .jpeg({ quality: 84 })
+    .toBuffer();
+}
+
 export async function makeCutout(input: { original: Buffer; prompt: string; key: string; signal: AbortSignal }): Promise<Buffer> {
   const metadata = await sharp(input.original, { limitInputPixels: 4000000 }).metadata();
   const width = metadata.width!; const height = metadata.height!;
@@ -81,8 +98,6 @@ export async function makeCutout(input: { original: Buffer; prompt: string; key:
     const check = checkMask(full, width, height);
     if (check.valid) candidates.push({ pixels: full, area: check.coverage });
   }
-  if (candidates.length !== 1) throw new AiFailure("MASK_AMBIGUOUS", "The photo did not produce one clear cutout. Your original photo is unchanged.");
-  const alpha = candidates[0].pixels;
-  const rgba = await sharp(input.original).removeAlpha().joinChannel(alpha, { raw: { width, height, channels: 1 } }).png().toBuffer();
-  return sharp(rgba).flatten({ background: "#f2f1ed" }).jpeg({ quality: 84 }).toBuffer();
+  if (candidates.length !== 1) throw new AiFailure("MASK_AMBIGUOUS", "No single clear item matched that prompt. Try a short item name and a photo with one main object. Your original is unchanged.");
+  return composeCutout(input.original, candidates[0].pixels, width, height);
 }

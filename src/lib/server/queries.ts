@@ -8,6 +8,10 @@ import { createSupabaseServerClient } from "./supabase";
 
 export const LISTING_SELECT = "*, category:categories(id, slug, name, icon), seller:profiles!listings_seller_id_fkey(id, display_name, avatar_url, hostel_block, created_at)";
 
+function normalizeListing(listing: Listing): Listing {
+  return { ...listing, photo_display_mode: listing.photo_display_mode ?? (listing.cutout_url ? "both" : "original") };
+}
+
 export async function listListings(raw: Record<string, unknown>): Promise<ApiResponse<Listing[]>> {
   const filters = listingFiltersSchema.parse(raw);
   const mode = getAppMode();
@@ -52,7 +56,7 @@ export async function listListings(raw: Record<string, unknown>): Promise<ApiRes
     }
     throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Listings are temporarily unavailable. Please try again.");
   }
-  const listings = (data ?? []) as unknown as Listing[];
+  const listings = ((data ?? []) as unknown as Listing[]).map(normalizeListing);
   const next = filters.cursor + listings.length;
   return { data: listings, mode, meta: { total: count ?? 0, next_cursor: next < (count ?? 0) ? next : null } };
 }
@@ -70,7 +74,7 @@ export async function getListing(id: string): Promise<ApiResponse<Listing>> {
   const { data, error } = await supabase.from("listings").select(LISTING_SELECT).eq("id", id).maybeSingle();
   if (error) throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "This listing is temporarily unavailable. Please try again.");
   if (!data) throw new ApiProblem(404, "NOT_FOUND", "Listing not found.");
-  return { data: data as unknown as Listing, mode };
+  return { data: normalizeListing(data as unknown as Listing), mode };
 }
 
 export async function getCategories(): Promise<ApiResponse<Category[]>> {

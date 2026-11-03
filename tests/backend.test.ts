@@ -111,7 +111,7 @@ describe("validation schemas", () => {
     expect(good.success).toBe(true);
   });
   it("listingSchema requires seller_confirmed true", () => {
-    const base = { title: "Valid Title", description: "Valid description with more than ten characters.", price_inr: 100, category_id: "00000000-0000-4000-8000-000000000001", condition: "good" as const, hostel_block: "A Block", image_path: "11111111-1111-4111-8111-111111111111/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1.jpg", tags: [], seller_confirmed: true as const };
+    const base = { title: "Valid Title", description: "Valid description with more than ten characters.", price_inr: 100, category_id: "00000000-0000-4000-8000-000000000001", condition: "good" as const, hostel_block: "A Block", image_path: "11111111-1111-4111-8111-111111111111/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1.jpg", photo_display_mode: "original" as const, tags: [], seller_confirmed: true as const };
     expect(listingSchema.safeParse(base).success).toBe(true);
     // missing seller_confirmed
     const rest: Record<string, unknown> = { ...base }; delete rest.seller_confirmed;

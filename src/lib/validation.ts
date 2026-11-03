@@ -3,6 +3,11 @@ import { CONDITIONS } from "./marketplace";
 
 export const uuidSchema = z.string().uuid();
 export const imagePathSchema = z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:jpg|jpeg|png|webp)$/i, "Use an uploaded listing image.");
+export const photoDisplayModeSchema = z.enum(["original", "cutout", "both"] as const);
+export const cutoutSelectionSchema = z.object({
+  operation_id: uuidSchema,
+  cutout_path: z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/i, "Use a generated cutout."),
+}).strict();
 export const listingSchema = z.object({
   title: z.string().trim().min(3).max(100),
   description: z.string().trim().min(10).max(3000),
@@ -11,10 +16,13 @@ export const listingSchema = z.object({
   condition: z.enum(CONDITIONS),
   hostel_block: z.string().trim().min(1).max(60),
   image_path: imagePathSchema,
+  photo_display_mode: photoDisplayModeSchema.default("original"),
+  cutout: cutoutSelectionSchema.nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(32)).max(12).default([]),
   seller_confirmed: z.literal(true, { error: "Confirm the details before publishing." }),
 }).strict();
-export const listingUpdateSchema = listingSchema.omit({ seller_confirmed: true }).partial().extend({
+export const listingUpdateSchema = listingSchema.omit({ seller_confirmed: true, photo_display_mode: true }).partial().extend({
+  photo_display_mode: photoDisplayModeSchema.optional(),
   tags: z.array(z.string().trim().min(1).max(32)).max(12).optional(),
   status: z.enum(["active", "sold"] as const).optional(),
   seller_confirmed: z.literal(true).optional(),

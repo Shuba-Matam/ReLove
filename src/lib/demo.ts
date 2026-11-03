@@ -39,7 +39,7 @@ export const DEMO_LISTINGS: Listing[] = examples.map(([title, price, category, c
     id, seller_id: seller.id, category_id: CATEGORIES[category].id, title,
     description: "This is an illustrative sample listing for exploring Re-Love. It is not an item for sale. Real sellers will add their own original photos, confirm the condition, and arrange a campus pickup through private messages.",
     price_inr: price, condition, hostel_block: seller.hostel_block!, status: index === 19 ? "sold" : "active",
-    image_url: `/demo/${art}.svg`, image_path: `${seller.id}/${id}.jpg`, cutout_url: null,
+    image_url: `/demo/${art}.svg`, image_path: `${seller.id}/${id}.jpg`, cutout_url: null, photo_display_mode: "original",
     tags, ai_status: "none", created_at: date, updated_at: date, category: CATEGORIES[category], seller,
   };
 });

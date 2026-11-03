@@ -20,6 +20,8 @@ type DraftSuggestion = {
   suggested_fields: string[];
 };
 
+type CutoutPreview = { operation_id: string; source_image_path: string; cutout_path: string; cutout_url: string };
+
 export function SellForm({ initialListing }: { initialListing?: Record<string, unknown> }) {
   const router = useRouter();
   const { session, loading: sessionLoading } = useSession();
@@ -28,6 +30,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const draftAvailable = session?.ai_features?.draft ?? session?.ai_enabled ?? false;
   const voiceAvailable = session?.ai_features?.transcribe ?? session?.ai_enabled ?? false;
   const anyAi = session?.ai_features ? (session.ai_features.draft || session.ai_features.transcribe || session.ai_features.cutout) : (session?.ai_enabled ?? false);
+  const cutoutAvailable = session?.ai_features?.cutout ?? session?.ai_enabled ?? false;
 
   const [title, setTitle] = React.useState((initialListing?.title as string) ?? "");
   const [description, setDescription] = React.useState((initialListing?.description as string) ?? "");
@@ -39,6 +42,18 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const [tagInput, setTagInput] = React.useState("");
   const [imagePath, setImagePath] = React.useState((initialListing?.image_path as string) ?? "");
   const [imageUrl, setImageUrl] = React.useState((initialListing?.image_url as string) ?? "");
+  const initialCutout = initialListing?.cutout_path && initialListing?.cutout_url ? {
+    operation_id: "",
+    source_image_path: (initialListing.image_path as string),
+    cutout_path: initialListing.cutout_path as string,
+    cutout_url: initialListing.cutout_url as string,
+  } : null;
+  const [cutout, setCutout] = React.useState<CutoutPreview | null>(initialCutout);
+  const [photoDisplayMode, setPhotoDisplayMode] = React.useState<"original" | "cutout" | "both">((initialListing?.photo_display_mode as "original" | "cutout" | "both") ?? (initialCutout ? "both" : "original"));
+  const [cutoutPrompt, setCutoutPrompt] = React.useState("");
+  const [cutoutLoading, setCutoutLoading] = React.useState(false);
+  const [cutoutError, setCutoutError] = React.useState("");
+  const [previewLoaded, setPreviewLoaded] = React.useState(false);
   const [confirmed, setConfirmed] = React.useState(false);
 
   const [uploading, setUploading] = React.useState(false);
@@ -58,10 +73,12 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const recordingTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const mounted = React.useRef(true);
+  const imagePathRef = React.useRef(imagePath);
   const chunksRef = React.useRef<Blob[]>([]);
 
   const priceNum = Number(price);
   const priceWarning = price.trim() ? validatePrice(priceNum) : null;
+  React.useEffect(() => { imagePathRef.current = imagePath; }, [imagePath]);
   React.useEffect(() => { mounted.current=true; return () => { mounted.current=false; if(recordingTimer.current) clearTimeout(recordingTimer.current); if(mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop(); streamRef.current?.getTracks().forEach((track) => track.stop()); }; },[]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -80,14 +97,34 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
       if(imagePath && imagePath !== initialListing?.image_path) void fetch("/api/uploads", { method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:imagePath}) }).catch(() => undefined);
-      setAiDraft(null); setSuggestedFields([]); setConfirmed(false);
-      setImagePath(json.data.path ?? json.path);
+      const nextPath = json.data.path ?? json.path;
+      setAiDraft(null); setSuggestedFields([]); setConfirmed(false); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setPreviewLoaded(false);
+      imagePathRef.current = nextPath;
+      setImagePath(nextPath);
       setImageUrl(json.data.url ?? json.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleCutout() {
+    if (!imagePath || !canWrite || !cutoutAvailable) { setCutoutError("Upload a photo and enter a short item name first."); return; }
+    const prompt = cutoutPrompt.trim();
+    if (!prompt) { setCutoutError("Enter a short item name, such as “desk chair” or “bicycle”."); return; }
+    const requestedPath = imagePath;
+    setCutoutLoading(true); setCutoutError(""); setPreviewLoaded(false);
+    try {
+      const response = await fetch("/api/ai/cutout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image_path: requestedPath, prompt }) });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json?.error?.message ?? "Cutout unavailable. Your original is unchanged.");
+      const result = (json.data ?? json) as CutoutPreview;
+      if (imagePathRef.current !== requestedPath || result.source_image_path !== requestedPath) return;
+      setCutout(result); setPhotoDisplayMode("both"); setConfirmed(false);
+    } catch (err) {
+      if (imagePathRef.current === requestedPath) setCutoutError(err instanceof Error ? err.message : "Cutout unavailable. Your original is unchanged.");
+    } finally { setCutoutLoading(false); }
   }
 
   async function handleAiDraft() {
@@ -175,6 +212,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
     }
     setError("");
     setFieldErrors({});
+    if (photoDisplayMode !== "original" && (!cutout || !previewLoaded)) { setError("Wait for the generated preview to load, or choose Original only."); return; }
     const payload: Record<string, unknown> = {
       title: title.trim(),
       description: description.trim(),
@@ -183,6 +221,8 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
       condition,
       hostel_block: block.trim(),
       image_path: imagePath,
+      photo_display_mode: photoDisplayMode,
+      cutout: cutout?.operation_id ? { operation_id: cutout.operation_id, cutout_path: cutout.cutout_path } : (initialListing?.cutout_path === cutout?.cutout_path ? undefined : null),
       tags,
       seller_confirmed: confirmed,
     };
@@ -229,7 +269,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
             <div className="relative w-full max-w-sm overflow-hidden rounded-xl ring-1 ring-[#021640]/60">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageUrl} alt="Listing preview — original photo" className="h-auto w-full object-cover" />
-              <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiDraft(null); setSuggestedFields([]); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>
+              <button type="button" onClick={() => { imagePathRef.current = ""; setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiDraft(null); setSuggestedFields([]); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setPreviewLoaded(false); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>
             </div>
           ) : (
             <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-[#020102] px-6 py-10 text-center ring-1 ring-dashed ring-[#021640] transition hover:ring-[#03245e] focus-within:ring-[#03245e]">
@@ -248,6 +288,25 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
           {uploadInfo && <p className="text-xs leading-5 text-[#9AA4B8]" role="status" aria-live="polite">{uploadInfo}</p>}
           {fieldErrors.image_path && <p className="text-xs text-red-400" role="alert">{fieldErrors.image_path}</p>}
           {!imagePath && !uploading && <p className="text-xs text-[#9AA4B8]">Photo required. Original remains the source of truth.</p>}
+        </div>
+
+        <div className="space-y-3 rounded-xl bg-[#01071d] p-3.5 ring-1 ring-[#021640]/50">
+          <div><h3 className="text-sm font-medium text-[#F5F5F7]">Optional background cutout</h3><p className="mt-1 text-xs leading-5 text-[#9AA4B8]">Create and inspect it before publishing. One clear item only; your original upload is always preserved.</p></div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input value={cutoutPrompt} onChange={(event) => setCutoutPrompt(event.target.value)} maxLength={80} placeholder="Short item name, e.g. desk chair" className="bg-[#020102]" />
+            <Button type="button" variant="secondary" size="sm" onClick={handleCutout} disabled={!imagePath || !canWrite || !cutoutAvailable || cutoutLoading}>{cutoutLoading ? "Creating…" : cutout ? "Regenerate cutout" : "Create cutout"}</Button>
+          </div>
+          {cutoutLoading && <p role="status" className="text-xs text-[#9AA4B8]">Finding one clear item and preparing your preview… This counted attempt is never published automatically.</p>}
+          {cutoutError && <p role="alert" className="text-xs leading-5 text-amber-300">{cutoutError}</p>}
+          {cutout && <div className="space-y-3">
+            <div className="relative aspect-[4/3] w-full max-w-sm overflow-hidden rounded-xl bg-[#020102] ring-1 ring-[#03245e]/70">
+              {!previewLoaded && <div className="absolute inset-0 grid place-items-center text-xs text-[#9AA4B8]">Loading generated preview…</div>}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={cutout.cutout_url} alt="Generated cutout preview" className="relative h-full w-full object-contain" onLoad={() => setPreviewLoaded(true)} onError={() => { setPreviewLoaded(false); setPhotoDisplayMode("original"); setCutoutError("The generated preview could not be loaded. Use the original or generate again."); }} />
+            </div>
+            <fieldset className="space-y-2"><legend className="text-xs font-medium text-[#F5F5F7]">Display on listing</legend><div className="grid gap-2 sm:grid-cols-3">{([['original','Original only'],['cutout','Cutout only'],['both','Both']] as const).map(([value,label]) => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#020102] px-3 py-2 text-xs text-[#cbd5e1] ring-1 ring-[#021640]/60 has-[:checked]:ring-[#60a5fa]"><input type="radio" name="photo-display-mode" value={value} checked={photoDisplayMode===value} disabled={value !== "original" && !previewLoaded} onChange={() => { setPhotoDisplayMode(value); setConfirmed(false); }} />{label}</label>)}</div></fieldset>
+          </div>}
+          {!cutoutAvailable && canWrite && <p className="text-xs text-[#9AA4B8]">Cutout generation is currently unavailable. Original-only publishing still works.</p>}
         </div>
 
         <div className="rounded-xl bg-[#01071d] p-3.5 ring-1 ring-[#021640]/50">

@@ -4,6 +4,7 @@ export const CONDITION_LABELS: Record<Condition, string> = { new: "New", like_ne
 export type AppMode = "demo" | "live" | "setup";
 export type ListingStatus = "active" | "sold" | "hidden";
 export type AiStatus = "none" | "pending" | "done" | "failed";
+export type PhotoDisplayMode = "original" | "cutout" | "both";
 
 export interface Category { id: string; slug: string; name: string; icon: string }
 export interface Profile { id: string; display_name: string; avatar_url: string | null; hostel_block: string | null; created_at?: string }
@@ -21,6 +22,8 @@ export interface Listing {
   image_path: string;
   cutout_url: string | null;
   cutout_path?: string | null;
+  cutout_operation_id?: string | null;
+  photo_display_mode: PhotoDisplayMode;
   tags: string[];
   ai_status: AiStatus;
   created_at: string;
