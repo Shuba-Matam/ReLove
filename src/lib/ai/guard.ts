@@ -14,7 +14,8 @@
  * - Notify coordinator with sanitized error (status code, code, without keys) on quota vs outage.
  */
 export class AiFailure extends Error {
-  constructor(public code: string, message: string, public status = 503, public retryable = false) { super(message); this.name = "AiFailure"; }
+  constructor(public code: string, message: string, public status = 503, public retryable = false, public data?: unknown) { super(message); this.name = "AiFailure"; }
+  // for duplicate_done, data holds cached result
 }
 
 export interface UsageLedger {
@@ -23,6 +24,14 @@ export interface UsageLedger {
 }
 
 const NON_RETRYABLE = new Set(["AI_CREDENTIALS", "AI_PAYMENT", "AI_FORBIDDEN", "AI_SIZE", "AI_INVALID", "AI_LIMIT", "AI_DISABLED", "AI_QUOTA"]);
+
+function bounded<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("LEDGER_TIMEOUT")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
 
 export async function runGuardedAi<T>(options: {
   enabled: boolean; ledger: UsageLedger; operation: (signal: AbortSignal, attempt: number) => Promise<T>;
@@ -36,18 +45,21 @@ export async function runGuardedAi<T>(options: {
     if (remaining <= 0) throw new AiFailure("AI_TIMEOUT", "AI took too long. Continue with the manual form.", 503, false);
     let reservation: { allowed: boolean; usageId: string | null; reason?: string | null } | null = null;
     try {
-      reservation = await options.ledger.reserve();
+      // bounded reserve: 4s max, independent of deadline; deadline checked after reserve to retain failed reservation if late
+      reservation = await bounded(options.ledger.reserve(), 4000);
     } catch {
       throw new AiFailure("AI_LIMIT_UNAVAILABLE", "AI usage checks are unavailable. Continue manually.", 503, false);
     }
     if (!reservation.allowed || !reservation.usageId) {
       const reason = reservation.reason ?? "unknown";
-      if (reason === "disabled" || reason === "invalid_limits") throw new AiFailure("AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.", 503, false);
+      if (reason === "disabled" || reason === "invalid_limits" || reason === "budget_unconfigured" || reason === "feature_disabled")
+        throw new AiFailure("AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.", 503, false);
       throw new AiFailure("AI_LIMIT", "AI has reached its usage limit. You can still post manually.", 429, false);
     }
     remaining = deadline - Date.now();
     if (remaining <= 0) {
-      await options.ledger.complete(reservation.usageId, false, 0).catch(() => undefined);
+      // retain failed reservation if late: bounded complete, ignore hang
+      await bounded(options.ledger.complete(reservation.usageId, false, 0), 2500).catch(() => undefined);
       throw new AiFailure("AI_TIMEOUT", "AI took too long. Continue with the manual form.", 503, false);
     }
     const started = Date.now(); let ok = false;
@@ -76,7 +88,8 @@ export async function runGuardedAi<T>(options: {
       }
     } finally {
       clearTimeout(timer);
-      await options.ledger.complete(reservation.usageId, ok, Math.min(60000, Date.now() - started)).catch(() => undefined);
+      // bounded complete: never block return past 2.5s hang
+      await bounded(options.ledger.complete(reservation.usageId, ok, Math.min(60000, Date.now() - started)), 2500).catch(() => undefined);
     }
   }
   throw new AiFailure("AI_UNAVAILABLE", "AI assistance is unavailable. Continue manually.", 503, false);

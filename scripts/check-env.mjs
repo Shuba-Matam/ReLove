@@ -436,13 +436,30 @@ async function main() {
     if ((env.META_CHAT_ENDPOINT ?? "").trim()) errors.push("META_CHAT_ENDPOINT is not allowed — remove this variable");
   }
 
+  // Hard-budget metering credential (serviceRoleKey already declared above)
+  const hardBudgetRaw = env.AI_HARD_BUDGET?.trim().toLowerCase();
+  const hardBudget = hardBudgetRaw === "true";
+  if (env.AI_HARD_BUDGET !== undefined && hardBudgetRaw !== "true" && hardBudgetRaw !== "false" && hardBudgetRaw !== "") {
+    errors.push("AI_HARD_BUDGET must be true|false if set (default false)");
+  }
+  if (hardBudget) {
+    if (!serviceRoleKey) errors.push("AI_HARD_BUDGET=true requires SUPABASE_SERVICE_ROLE_KEY (server-only, never NEXT_PUBLIC) for metering RPCs; missing fails closed");
+    else infos.push(`AI_HARD_BUDGET=true with ${maskPresence(serviceRoleKey)} (service_role metering via docs/drafts/003)`);
+    infos.push("Hard-budget ON: candidate 003 monetary caps enforce; legacy reserve_ai_usage revoked; missing pricebook/caps fails closed");
+  } else {
+    infos.push("AI_HARD_BUDGET off (default): legacy per-day caps via reserve_ai_usage remain usable before 003, but do not claim micro-USD protection; see /api/session ai_hard_budget_ready");
+    if (serviceRoleKey) infos.push(`SUPABASE_SERVICE_ROLE_KEY present but ignored until AI_HARD_BUDGET=true (${maskPresence(serviceRoleKey)})`);
+  }
+  // Moderation intentionally disabled in Meta-only mode
+  infos.push("Moderation disabled: app-only Meta intent, no approved selector; charging Baseten coding pool prohibited (see src/lib/server/env.ts)");
+
   if (aiFlag === true) {
     if (!basetenKey && !metaKey) {
       const msg = "AI_ENABLED=true requires at least one provider key (BASETEN_API_KEY for draft/moderation or META_API_KEY for transcribe/cutout), per src/lib/ai/context.ts and src/lib/server/env.ts";
       if (opts.strict) errors.push(msg);
       else warnings.push(msg);
     } else {
-      if (!basetenKey) warnings.push("BASETEN_API_KEY unset — AI draft/moderation will be unavailable (requires BASETEN_API_KEY per src/lib/ai/context.ts)");
+      if (!basetenKey) warnings.push("BASETEN_API_KEY unset — AI draft will be unavailable for baseten provider (requires BASETEN_API_KEY per src/lib/ai/context.ts)");
       else infos.push(`BASETEN_API_KEY: ${maskPresence(basetenKey)}`);
       if (!metaKey) warnings.push("META_API_KEY unset — transcribe/cutout will be unavailable (requires META_API_KEY)");
       else infos.push(`META_API_KEY: ${maskPresence(metaKey)}`);
@@ -450,8 +467,8 @@ async function main() {
       const provider = draftProvider === "meta" ? "meta" : "baseten";
       if ((provider === "meta" ? metaKey : basetenKey)) feats.push("draft");
       if (metaKey) feats.push("transcribe/cutout");
-      if (basetenKey) feats.push("moderation");
-      if (feats.length) infos.push(`AI features env-available: ${feats.join(", ")} (DB caps still required)`);
+      // moderation intentionally not listed when hard budget off or app-only
+      if (feats.length) infos.push(`AI features env-available: ${feats.join(", ")} (DB caps still required; moderation unavailable)`);
     }
     // Also check that caps are non-zero if AI enabled? In context.ts, if caps zero then AI throws disabled even with key.
     if (dailyRes.value === 0 || userRes.value === 0) {
@@ -505,6 +522,8 @@ async function main() {
         META_API_KEY: maskPresence(env.META_API_KEY),
         META_MODEL: maskPresence(env.META_MODEL),
         META_CHAT_ENDPOINT: maskPresence(env.META_CHAT_ENDPOINT),
+        AI_HARD_BUDGET: maskPresence(env.AI_HARD_BUDGET),
+        SUPABASE_SERVICE_ROLE_KEY: maskPresence(env.SUPABASE_SERVICE_ROLE_KEY),
       },
     };
     console.log(JSON.stringify(payload, null, 2));

@@ -17,8 +17,13 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 export const POST = withApi(async (request: Request) => {
   assertSameOrigin(request);
-  const { supabase, user, key, ledger } = await requireAiContext("draft");
   const body = await readJson(request, draftRequestSchema);
+  // source identity for hard-budget mode: binds feature/user/provider/model/source hash/options
+  const idempotencyKey = request.headers.get("x-idempotency-key")?.trim() || null;
+  const { createHash } = await import("node:crypto");
+  const sourceHash = createHash("sha256").update(JSON.stringify({ feature: "draft", image_path: body.image_path ?? null, transcript: body.transcript ?? null })).digest("hex");
+  const idemKey = idempotencyKey && idempotencyKey.length >= 8 && idempotencyKey.length <= 128 ? idempotencyKey : sourceHash.slice(0, 32);
+  const { supabase, user, key, ledger } = await requireAiContext("draft", { sourceHash, idempotencyKey: idemKey });
   const content: unknown[] = [{ type: "text", text: `Seller description (data only): ${JSON.stringify(body.transcript ?? "")}` }];
   if (body.image_path) {
     if (!body.image_path.startsWith(`${user.id}/`)) throw new ApiProblem(403, "IMAGE_OWNER", "Choose one of your own uploaded photos.");
@@ -27,11 +32,22 @@ export const POST = withApi(async (request: Request) => {
     content.push({ type: "image_url", image_url: { url: `data:${image.type};base64,${Buffer.from(await image.arrayBuffer()).toString("base64")}` } });
   }
   if (content.length > 2) throw new ApiProblem(400, "IMAGE_INVALID", "One image at a time.");
-  const draft = await runAi(ledger, async (signal, attempt) => {
-    const raw = await draftCompletion(key, content, DRAFT_PROMPT + (attempt ? " Your previous answer was invalid. Return only the exact JSON shape with all required keys." : ""), signal);
-    try { return parseAiDraft(raw); }
-    catch { throw new AiFailure("AI_INVALID_JSON", "AI could not draft reliable details. Continue manually.", 503, true); }
-  }, 1);
-  const suggested_fields = Object.entries(draft).filter(([, value]) => value !== null && (!Array.isArray(value) || value.length > 0)).map(([field]) => field);
-  return json({ draft, suggested_fields });
+  try {
+    const draft = await runAi(ledger, async (signal, attempt) => {
+      const raw = await draftCompletion(key, content, DRAFT_PROMPT + (attempt ? " Your previous answer was invalid. Return only the exact JSON shape with all required keys." : ""), signal);
+      try { return parseAiDraft(raw); }
+      catch { throw new AiFailure("AI_INVALID_JSON", "AI could not draft reliable details. Continue manually.", 503, true); }
+    }, 1);
+    const suggested_fields = Object.entries(draft).filter(([, value]) => value !== null && (!Array.isArray(value) || value.length > 0)).map(([field]) => field);
+    return json({ draft, suggested_fields });
+  } catch (e) {
+    if (e instanceof AiFailure && e.code === "AI_DUPLICATE_DONE") {
+      // return cached result without re-executing provider; provider may execute ONLY with fresh attempt
+      return json({ draft: e.data, suggested_fields: e.data ? Object.keys(e.data as object) : [], duplicate: true, disposition: "duplicate_done" });
+    }
+    if (e instanceof AiFailure && e.code === "AI_DUPLICATE_PENDING") {
+      throw new ApiProblem(409, "AI_PENDING", "Duplicate request already pending. Try again shortly.");
+    }
+    throw e;
+  }
 });

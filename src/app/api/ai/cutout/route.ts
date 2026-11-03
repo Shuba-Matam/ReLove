@@ -17,8 +17,11 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 export const POST = withApi(async (request: Request) => {
   assertSameOrigin(request);
-  const { supabase, user, key, ledger } = await requireAiContext("cutout");
   const { listing_id } = await readJson(request, z.object({ listing_id: uuidSchema }).strict());
+  const { createHash } = await import("node:crypto");
+  const sourceHash = createHash("sha256").update(JSON.stringify({ feature: "cutout", listing_id })).digest("hex");
+  const idempotencyKey = request.headers.get("x-idempotency-key")?.trim() || sourceHash.slice(0, 32);
+  const { supabase, user, key, ledger } = await requireAiContext("cutout", { sourceHash, idempotencyKey, listingId: listing_id });
   const { data: listing, error } = await supabase.from("listings").select("id,seller_id,image_path,title,ai_status,cutout_path").eq("id", listing_id).eq("seller_id", user.id).maybeSingle();
   if (error) throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "This listing is temporarily unavailable.");
   if (!listing) throw new ApiProblem(404, "NOT_FOUND", "Listing not found.");
@@ -33,7 +36,15 @@ export const POST = withApi(async (request: Request) => {
     const { data: source, error: sourceError } = await supabase.storage.from("listing-images").download(listing.image_path);
     if (sourceError || !source || source.size > PROVIDER_LIMITS.maxImageBytes) throw new ApiProblem(400, "IMAGE_UNAVAILABLE", "The original photo could not be loaded.");
     const original = Buffer.from(await source.arrayBuffer());
-    const processed = await runAi(ledger, (signal) => makeCutout({ original, prompt: listing.title, key, signal }), 0);
+    let processed: Buffer;
+    try {
+      processed = await runAi(ledger, (signal) => makeCutout({ original, prompt: listing.title, key, signal }), 0);
+    } catch (e) {
+      const { AiFailure } = await import("@/lib/ai/guard");
+      if (e instanceof AiFailure && e.code === "AI_DUPLICATE_DONE") return json({ status: "done", duplicate: true, disposition: "duplicate_done" });
+      if (e instanceof AiFailure && e.code === "AI_DUPLICATE_PENDING") throw new ApiProblem(409, "AI_PENDING", "Cutout already pending.");
+      throw e;
+    }
     uploaded = `${user.id}/${randomUUID()}.jpg`;
     const { error: uploadError } = await supabase.storage.from("listing-images").upload(uploaded, processed, { contentType: "image/jpeg", upsert: false });
     if (uploadError) throw new ApiProblem(503, "CUTOUT_SAVE", "The cutout could not be saved. Your original is unchanged.");

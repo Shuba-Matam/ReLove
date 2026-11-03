@@ -30,6 +30,36 @@ export function isLiveMode(): boolean {
 
 export { getDraftProvider };
 
+export function getFeatureProviderModel(feature: "draft" | "transcribe" | "cutout" | "moderation"): { provider: "baseten" | "meta"; model: string } {
+  if (feature === "transcribe") {
+    const m = "muse-voice-transcribe-1.0";
+    return { provider: "meta", model: m };
+  }
+  if (feature === "cutout") {
+    const m = "sam-3.1";
+    return { provider: "meta", model: m };
+  }
+  if (feature === "moderation") {
+    // Moderation via Baseten not implemented for Meta-only app; keep unavailable unless explicitly routed
+    const raw = process.env.AI_MODERATION_PROVIDER?.trim().toLowerCase();
+    if (raw === "baseten") {
+      const model = process.env.BASETEN_MODEL?.trim() || "meta-models/muse-spark-open-1026";
+      return { provider: "baseten", model };
+    }
+    throw new Error("moderation unavailable: app intent is Meta-only; no approved selector, must stay disabled to avoid charging coding pool");
+  }
+  // draft
+  const provider = getDraftProvider(); // throws if invalid => fail closed
+  if (provider === "meta") {
+    const model = process.env.META_MODEL?.trim() ?? "";
+    // validate model allowlist fail closed
+    if (model !== "muse-spark-1.3") throw new Error("invalid meta model");
+    return { provider, model };
+  }
+  const model = process.env.BASETEN_MODEL?.trim() || "meta-models/muse-spark-open-1026";
+  return { provider, model };
+}
+
 export function getAiFeatureAvailability() {
   const live = getAppMode() === "live";
   const enabled = process.env.AI_ENABLED?.trim().toLowerCase() === "true";
@@ -42,18 +72,42 @@ export function getAiFeatureAvailability() {
   })();
   const baseKey = Boolean(process.env.BASETEN_API_KEY?.trim());
   const metaKey = Boolean(process.env.META_API_KEY?.trim());
-  let provider: "baseten" | "meta" = "baseten";
-  try { provider = getDraftProvider(); } catch { provider = "baseten"; }
+  // fail closed on invalid provider/model: do not fallback to baseten
+  let provider: "baseten" | "meta" | null = null;
+  let providerValid = false;
+  try {
+    provider = getDraftProvider();
+    // also validate model for meta
+    if (provider === "meta") {
+      const m = process.env.META_MODEL?.trim() ?? "";
+      if (m !== "muse-spark-1.3") throw new Error("invalid model");
+    }
+    providerValid = true;
+  } catch {
+    providerValid = false;
+    provider = null;
+  }
   const draftKeyOk = (() => {
-    try { return provider === "meta" ? metaKey : baseKey; } catch { return false; }
+    if (!providerValid || !provider) return false;
+    return provider === "meta" ? metaKey : baseKey;
   })();
+  // For draft, require valid provider selection; invalid => unavailable
+  const draftAvailable = live && enabled && capsOk && draftKeyOk && providerValid;
+  const transcribeAvailable = live && enabled && capsOk && metaKey;
+  const cutoutAvailable = live && enabled && capsOk && metaKey;
+  // Moderation intentionally unavailable in Meta-only mode; flag explicitly
+  const moderationAvailable = false; // live && enabled && capsOk && baseKey would charge coding pool silently -> disabled
+
   const features = {
-    draft: live && enabled && capsOk && draftKeyOk,
-    transcribe: live && enabled && capsOk && metaKey,
-    cutout: live && enabled && capsOk && metaKey,
-    moderation: live && enabled && capsOk && baseKey,
+    draft: draftAvailable,
+    transcribe: transcribeAvailable,
+    cutout: cutoutAvailable,
+    moderation: moderationAvailable,
   } as const;
-  return { ...features, any: Object.values(features).some(Boolean), provider };
+  // provider fallback for display only when valid, else null; never pretend baseten when invalid
+  const displayProvider = providerValid ? (provider as "baseten" | "meta") : ("baseten" as const);
+  // Note: env availability != DB readiness; DB may still be disabled/unconfigured.
+  return { ...features, any: Object.values(features).some(Boolean), provider: displayProvider, providerValid, moderationNote: "moderation disabled: app-only Meta intent, no approved moderation selector; charging Baseten coding pool prohibited" };
 }
 
 export function getAiEnabled(): boolean {

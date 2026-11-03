@@ -13,11 +13,14 @@ export const GET = withApi(async () => {
   const auth_configured = isAuthConfigured();
   const ai_features = { draft: availability.draft, transcribe: availability.transcribe, cutout: availability.cutout, moderation: availability.moderation } as const;
   const ai_provider = availability.provider;
+  const ai_hard_budget = process.env.AI_HARD_BUDGET === "true";
+  const ai_metering_configured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+  const ai_hard_budget_ready = !ai_hard_budget || ai_metering_configured; // safe setup state: if hard mode requires service key
 
-  if(mode !== "live") return json({ user:null, mode, ai_enabled:false, auth_configured:false, ai_features: { draft:false, transcribe:false, cutout:false, moderation:false }, ai_provider });
+  if(mode !== "live") return json({ user:null, mode, ai_enabled:false, auth_configured:false, ai_features: { draft:false, transcribe:false, cutout:false, moderation:false }, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready });
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    const data: SessionInfo = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider };
+    const data = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
     return json(data);
   }
 
@@ -25,7 +28,7 @@ export const GET = withApi(async () => {
   const authUser = userData?.user ?? null;
 
   if (!authUser) {
-    const data: SessionInfo = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider };
+    const data = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
     return json(data);
   }
 
@@ -56,6 +59,6 @@ export const GET = withApi(async () => {
     };
   }
 
-  const data: SessionInfo = { user, mode, ai_enabled, auth_configured, ai_features, ai_provider };
+  const data = { user, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
   return json(data);
 });
