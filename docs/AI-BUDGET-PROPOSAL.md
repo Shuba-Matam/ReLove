@@ -3,10 +3,10 @@
 The hard-budget migration is already applied. This file records the active release contract; it is not a migration proposal and contains no SQL to apply.
 
 - Provider: Meta for draft, voice, and cutout. Baseten compatibility remains disabled for this release and must not use coding-agent credits.
-- Approved total cap: `100000` microUSD ($0.10).
+- Conservative Meta cap: `600000` microUSD ($0.60 app reservation ceiling).
 - Feature reservation: `10000` microUSD for each draft, transcription, or cutout attempt.
-- Limits: 10 attempts per UTC day and 10 per user per UTC day for the owner-only activation window.
+- Limits: 60 attempts per UTC day shared across accounts, 15 per ordinary authenticated user, and 30 for an authenticated email/ID in `AI_OWNER_ALLOWLIST` when `AI_OWNER_DAILY_LIMIT=30`.
 - Metering: every provider attempt, including a failure or timeout, requires an atomic reservation through the privileged server-only metering client. Duplicate completed operations return their validated cached result without another provider attempt.
-- Safety gates: `AI_ENABLED`, feature settings, pricebook rows, authentication, CSRF checks, owner test allowlist, provider/model allowlists, and trusted input/output bounds all remain mandatory and fail closed.
+- Safety gates: `AI_ENABLED`, feature settings, pricebook rows, authentication, CSRF checks, provider/model allowlists, and trusted input/output bounds remain mandatory and fail closed. `AI_OWNER_ALLOWLIST` classifies the authenticated owner for the higher cap when test mode is off.
 
-Activation changes only existing environment and database settings. Do not add schema, raise the approved cap, loosen parsing, bypass metering, or enable retries during owner-only smoke testing. See `docs/PHASE-2-AI.md` for the release checklist.
+Activation changes only existing environment and database settings. The database global and feature `per_user_limit` remain the hard ceiling (30); the trusted server supplies the ordinary 15 or owner 30 limit to the service-role-only reservation RPC. Do not reset usage, add schema, loosen parsing, bypass metering, or enable retries during activation. See `docs/PHASE-2-AI.md` for the release checklist.

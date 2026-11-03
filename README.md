@@ -43,7 +43,8 @@ To connect the actual marketplace, apply the approved SQL files in order using t
 | GOOGLE_AUTH_ENABLED | true once the Google provider and callback allowlist are ready |
 | AI_ENABLED | Master switch; keep false until provider checks pass |
 | AI_DAILY_LIMIT | Global cap across features, defaults to 50 |
-| AI_USER_DAILY_LIMIT | User cap across features, defaults to 5 |
+| AI_USER_DAILY_LIMIT | Authenticated-user cap across features, defaults to 15 |
+| AI_OWNER_DAILY_LIMIT | Optional cap for an authenticated email/ID in `AI_OWNER_ALLOWLIST`; falls back to the regular cap when unset and fails closed for that owner when invalid |
 | BASETEN_API_KEY | Application credential for photo drafts |
 | BASETEN_MODEL | Defaults to meta-models/muse-spark-open-1026; verify availability in the app account |
 | META_API_KEY | Application credential for voice and SAM |

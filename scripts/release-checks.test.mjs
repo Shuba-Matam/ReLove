@@ -499,6 +499,10 @@ describe("check-env CLI", () => {
     const rOutOfRange = await runCli(CHECK_ENV, [], { APP_MODE: "demo", AI_USER_DAILY_LIMIT: "9999" }, { timeoutMs: 5000 });
     assert.equal(rOutOfRange.code, 1);
 
+    const rBadOwner = await runCli(CHECK_ENV, [], { APP_MODE: "demo", AI_OWNER_DAILY_LIMIT: "0" }, { timeoutMs: 5000 });
+    assert.equal(rBadOwner.code, 1);
+    assert.match(rBadOwner.stdout, /AI_OWNER_DAILY_LIMIT must be an integer between 1 and 1000/);
+
     const rZero = await runCli(CHECK_ENV, [], { APP_MODE: "demo", AI_DAILY_LIMIT: "0", AI_USER_DAILY_LIMIT: "0" }, { timeoutMs: 5000 });
     assert.equal(rZero.code, 0);
     assert.match(rZero.stdout, /0 means off/);

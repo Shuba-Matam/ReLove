@@ -23,9 +23,14 @@ AI_ENABLED=false             # release AI off; provider keys optional
 BASETEN_API_KEY              # optional, draft/moderation
 BASETEN_MODEL=meta-models/muse-spark-open-1026  # optional default
 META_API_KEY                 # optional, transcribe/cutout
-AI_DAILY_LIMIT=50            # optional 0..1000
-AI_USER_DAILY_LIMIT=5        # optional 0..1000
+AI_DAILY_LIMIT=60            # optional 0..1000; shared cap across accounts
+AI_USER_DAILY_LIMIT=15       # optional 0..1000; ordinary authenticated account
+AI_OWNER_DAILY_LIMIT=30      # optional 1..1000; allowlisted owner only, falls back to user limit when unset
+AI_TEST_MODE=false           # all authenticated accounts; allowlist still classifies the owner cap
+AI_MAX_RETRIES=0             # no provider retry during activation
 ```
+
+`AI_OWNER_DAILY_LIMIT` is selected only from the verified server-side user email/ID in `AI_OWNER_ALLOWLIST`; request input cannot raise it. The owner override applies whether or not `AI_TEST_MODE` is enabled. If the override is present but invalid, allowlisted owner requests fail closed; ordinary authenticated users continue to use `AI_USER_DAILY_LIMIT`.
 
 `setup` paths remain in code but deploy target is `live` (healthy 200) vs `demo` (honest samples). See **Mode semantics**.
 

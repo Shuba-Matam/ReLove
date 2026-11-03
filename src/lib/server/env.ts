@@ -65,7 +65,7 @@ export function getAiFeatureAvailability() {
   const enabled = process.env.AI_ENABLED?.trim().toLowerCase() === "true";
   const capsOk = (() => {
     const daily = Number(process.env.AI_DAILY_LIMIT ?? 50);
-    const perUser = Number(process.env.AI_USER_DAILY_LIMIT ?? 5);
+    const perUser = Number(process.env.AI_USER_DAILY_LIMIT ?? 15);
     const dailyOk = Number.isSafeInteger(daily) && daily > 0;
     const perUserOk = Number.isSafeInteger(perUser) && perUser > 0;
     return dailyOk && perUserOk;

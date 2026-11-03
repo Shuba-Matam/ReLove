@@ -2,7 +2,7 @@ import "server-only";
 import { requireUser } from "@/lib/server/auth";
 import { ApiProblem } from "@/lib/server/http";
 import { AiFailure, runMeteredGuarded, type MeteredLedger } from "./guard";
-import { getDraftProvider, getFeatureProviderModel, getOwnerAllowlist, isAiTestMode } from "@/lib/server/env";
+import { getDraftProvider, getFeatureProviderModel, getOwnerAllowlist, isAiTestMode, isAllowedOwner } from "@/lib/server/env";
 import { createMeteringClient, meterReserve, meterComplete, hashSource, fetchPricebookRow, enforcePricebookBounds, pricebookFingerprint } from "./meter";
 import { PROVIDER_LIMITS } from "./provider";
 
@@ -33,6 +33,15 @@ function cap(name: string, fallback: number) {
   return Number.isSafeInteger(value) && value > 0 ? Math.min(value, 1000) : 0;
 }
 
+function userDailyLimit(user: { id: string; email?: string | null }): number {
+  const regularLimit = cap("AI_USER_DAILY_LIMIT", 15);
+  if (!regularLimit || !isAllowedOwner(user.email, user.id)) return regularLimit;
+  const rawOwnerLimit = process.env.AI_OWNER_DAILY_LIMIT;
+  if (rawOwnerLimit === undefined) return regularLimit;
+  const ownerLimit = Number(rawOwnerLimit);
+  return Number.isSafeInteger(ownerLimit) && ownerLimit > 0 && ownerLimit <= 1000 ? ownerLimit : 0;
+}
+
 function keyForFeature(feature: AiFeature): string | undefined {
   if (feature === "draft") return getDraftProvider() === "meta" ? process.env.META_API_KEY?.trim() : process.env.BASETEN_API_KEY?.trim();
   if (feature === "moderation") return process.env.BASETEN_API_KEY?.trim();
@@ -46,7 +55,7 @@ export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?:
   const key = keyForFeature(feature);
   if (!key) throw new ApiProblem(503, "AI_UNAVAILABLE", "AI assistance is not configured. You can continue manually.");
   const daily = cap("AI_DAILY_LIMIT", 50);
-  const userLimit = cap("AI_USER_DAILY_LIMIT", 5);
+  const userLimit = userDailyLimit(context.user);
   if (!daily || !userLimit) throw new ApiProblem(503, "AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.");
 
   const meteringClient = createMeteringClient();

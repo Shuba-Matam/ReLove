@@ -56,7 +56,8 @@ Validated:
   GOOGLE_AUTH_ENABLED     true|false (live expects true)
   AI_ENABLED              true|false (current release expects false)
   AI_DAILY_LIMIT          integer 0..1000 (0=off, default 50 if unset)
-  AI_USER_DAILY_LIMIT     integer 0..1000 (0=off, default 5 if unset)
+  AI_USER_DAILY_LIMIT     integer 0..1000 (0=off, default 15 if unset)
+  AI_OWNER_DAILY_LIMIT    optional integer 1..1000 (allowlisted owner; falls back to user limit)
   BASETEN_API_KEY         required if AI_ENABLED=true for draft/moderation
   META_API_KEY            required if AI_ENABLED=true for transcribe/cutout
   BASETEN_MODEL           optional, defaults meta-models/muse-spark-open-1026
@@ -386,9 +387,15 @@ async function main() {
   if (!dailyRes.ok) errors.push(dailyRes.reason);
   else infos.push(`AI_DAILY_LIMIT: ${dailyRes.note === null ? "unset" : dailyRes.note} — ${dailyRes.note ? maskPresence(env.AI_DAILY_LIMIT ?? "") + " " + dailyRes.note : dailyRes.note}`);
 
-  const userRes = validateNumericCap("AI_USER_DAILY_LIMIT", env.AI_USER_DAILY_LIMIT, " (5)");
+  const userRes = validateNumericCap("AI_USER_DAILY_LIMIT", env.AI_USER_DAILY_LIMIT, " (15)");
   if (!userRes.ok) errors.push(userRes.reason);
   else infos.push(`AI_USER_DAILY_LIMIT: ${userRes.note === null ? "unset" : userRes.note} — ${userRes.note ? maskPresence(env.AI_USER_DAILY_LIMIT ?? "") + " " + userRes.note : userRes.note}`);
+
+  const ownerRes = env.AI_OWNER_DAILY_LIMIT === undefined
+    ? { ok: true, value: null, note: null }
+    : validateNumericCap("AI_OWNER_DAILY_LIMIT", env.AI_OWNER_DAILY_LIMIT, "");
+  if (!ownerRes.ok || ownerRes.value === 0) errors.push(ownerRes.ok ? "AI_OWNER_DAILY_LIMIT must be an integer between 1 and 1000" : ownerRes.reason);
+  else infos.push(`AI_OWNER_DAILY_LIMIT: ${ownerRes.note === null ? "unset (falls back to AI_USER_DAILY_LIMIT)" : maskPresence(env.AI_OWNER_DAILY_LIMIT ?? "") + " " + ownerRes.note}`);
 
   // Additional AI caps: AI caps validated, allow zero cap (off) if runtime permits
   // In context.ts cap() returns 0 for zero, and then throws AI_DISABLED. So zero is valid as "off".
@@ -520,6 +527,7 @@ async function main() {
         AI_ENABLED: maskPresence(env.AI_ENABLED),
         AI_DAILY_LIMIT: maskPresence(env.AI_DAILY_LIMIT),
         AI_USER_DAILY_LIMIT: maskPresence(env.AI_USER_DAILY_LIMIT),
+        AI_OWNER_DAILY_LIMIT: maskPresence(env.AI_OWNER_DAILY_LIMIT),
         AI_DRAFT_PROVIDER: maskPresence(env.AI_DRAFT_PROVIDER),
         BASETEN_API_KEY: maskPresence(env.BASETEN_API_KEY),
         BASETEN_MODEL: maskPresence(env.BASETEN_MODEL),
