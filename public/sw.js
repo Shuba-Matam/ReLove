@@ -24,12 +24,10 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// --- Web-Push foundations (schema-independent, no sends yet) ---
-// Verified browser support guidance in docs/NOTIFICATION-PROPOSAL.md.
-// No permission prompt without user gesture; subscription storage requires owner-approved schema.
+// --- Web-Push foundations (no sends, closed-app pending schema) ---
+// Fixed generic content only — never trust payload title/body to avoid leakage.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Generic, privacy-safe push payload handling (no message bodies).
-// Server will send only: { title, body: generic, threadId? } — never expose endpoints/keys to other users.
 self.addEventListener("push", (event) => {
   let data = null;
   try {
@@ -38,13 +36,16 @@ self.addEventListener("push", (event) => {
     data = null;
   }
 
-  // Validate generic payload; fallback to safe default.
-  const title = (data && typeof data.title === "string" && data.title.trim().slice(0, 80)) || "New message on Re-Love";
-  const body = (data && typeof data.body === "string" && data.body.trim().slice(0, 120)) || "You have a new message. Open Re-Love to view it.";
-  const threadId = data && typeof data.threadId === "string" ? data.threadId : null;
+  // Fixed generic title/body — always same, no message body leakage
+  const title = "New message on Re-Love";
+  const body = "You have a new message. Open Re-Love to view it.";
+
+  let threadId = null;
+  if (data && typeof data.threadId === "string" && UUID_RE.test(data.threadId)) {
+    threadId = data.threadId;
+  }
   const url = threadId ? `/inbox/${threadId}` : "/inbox";
 
-  // Generic notification — no message bodies, no sender email leakage.
   const options = {
     body,
     icon: "/icons/icon-192.png",
@@ -59,28 +60,46 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "/inbox";
-  const fullUrl = new URL(targetUrl, self.location.origin).href;
+  const rawUrl = (event.notification.data && event.notification.data.url) || "/inbox";
+  // Validate UUID in path and same-origin navigation; ignore invalid targets
+  let targetPath = "/inbox";
+  try {
+    const parsed = new URL(rawUrl, self.location.origin);
+    if (parsed.origin === self.location.origin) {
+      // Allow /inbox or /inbox/<uuid> only
+      if (parsed.pathname === "/inbox") targetPath = "/inbox";
+      else {
+        const m = parsed.pathname.match(/^\/inbox\/([^/]+)/);
+        if (m && UUID_RE.test(m[1])) targetPath = `/inbox/${m[1]}`;
+      }
+    }
+  } catch {
+    targetPath = "/inbox";
+  }
+  const fullUrl = new URL(targetPath, self.location.origin).href;
 
   event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clients) => {
-        // Focus existing Re-Love tab if present; else open new.
-        for (const client of clients) {
-          if (client.url.startsWith(self.location.origin) && "focus" in client) {
-            client.navigate(fullUrl);
-            return client.focus();
+    (async () => {
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clients) {
+        if (client.url.startsWith(self.location.origin) && "focus" in client) {
+          // Await navigate before focus to ensure correct page
+          if ("navigate" in client) {
+            try {
+              await client.navigate(fullUrl);
+            } catch {
+              // navigate may fail; still focus
+            }
           }
+          return client.focus();
         }
-        if (self.clients.openWindow) return self.clients.openWindow(fullUrl);
-        return null;
-      })
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(fullUrl);
+      return null;
+    })()
   );
 });
 
-// Optional: handle push subscription change (browser rotates endpoint)
 self.addEventListener("pushsubscriptionchange", () => {
-  // No durable storage yet — requires owner-approved schema (docs proposal).
-  // Future: re-subscribe and POST to /api/notifications/subscribe with VAPID p256dh/auth.
+  // No durable storage yet — requires owner-approved schema (docs/drafts/004_notifications.sql).
 });

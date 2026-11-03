@@ -1,18 +1,21 @@
 import type { ThreadSummary } from "@/lib/marketplace";
+import { z } from "zod";
 
 export const NOTIFICATION_POLL_INTERVAL_MS = 30_000;
+export const NOTIFICATION_POLL_TIMEOUT_MS = 10_000;
 export const NOTIFICATION_TOAST_DURATION_MS = 8000;
 export const NOTIFICATION_MAX_TOASTS = 3;
+export const NOTIFICATION_SEEN_HISTORY_MAX = 200;
+export const NOTIFICATION_MESSAGES_LIMIT = 20;
 
 export interface NotificationToastData {
-  /** Unique dedupe key: threadId + createdAt */
+  /** Stable dedupe key: message id (UUID) */
   id: string;
   threadId: string;
   listingTitle: string;
   listingImageUrl: string;
   participantName: string;
   createdAt: string;
-  /** Truncated preview for in-app toast only; email/push must NOT include bodies */
   bodyPreview: string | null;
 }
 
@@ -30,19 +33,15 @@ export function computeGlobalUnreadCount(threads: ThreadSummary[]): number {
 
 export function getOpenThreadId(pathname: string | null | undefined): string | null {
   if (!pathname) return null;
-  // pathname is e.g. "/inbox/abc-..." or "/inbox/abc-.../..."
   const match = pathname.match(/^\/inbox\/([^/]+)/);
   if (!match) return null;
   const candidate = match[1];
-  // Basic uuid shape check; don't strictly validate to keep helper pure.
-  // Return candidate; caller may validate if needed.
   if (!candidate || candidate.length < 8) return null;
   return candidate;
 }
 
 export function createToastDedupeKey(thread: ThreadSummary): string | null {
   if (!thread.last_message?.created_at) return null;
-  // Composite key ensures same message never re-toasts; unread_count alone is insufficient for dedupe.
   return `${thread.id}:${thread.last_message.created_at}:${thread.last_message.sender_id ?? ""}`;
 }
 
@@ -58,10 +57,7 @@ export function buildThreadSnapshotMap(threads: ThreadSummary[]): Map<string, Th
   return map;
 }
 
-export function shouldPollNotifications(
-  mode: string | null | undefined,
-  userId: string | null | undefined
-): boolean {
+export function shouldPollNotifications(mode: string | null | undefined, userId: string | null | undefined): boolean {
   return mode === "live" && Boolean(userId);
 }
 
@@ -97,20 +93,18 @@ export function truncateBodyPreview(body: string | null | undefined, max = 80): 
  * - Never toast for already-open thread.
  * - Dedupe by message key (threadId + createdAt + sender).
  * - Never toast on threads with unread_count 0 or no last_message.
- * - Thread with increased unread_count but missing prev entry is considered new.
  */
 export function detectNewMessageToasts(options: DetectNewToastsOptions): DetectNewToastsResult {
   const { prevMap, nextThreads, currentUserId, openThreadId, seenDedupeKeys, isInitial } = options;
   const nextMap = buildThreadSnapshotMap(nextThreads);
 
   if (isInitial) {
-    // Baseline only; mark existing keys as seen to avoid retroactive toasts.
     const nextSeen = new Set(seenDedupeKeys);
     for (const t of nextThreads) {
       const key = createToastDedupeKey(t);
       if (key) nextSeen.add(key);
     }
-    return { toasts: [], nextMap, nextSeenKeys: nextSeen };
+    return { toasts: [], nextMap, nextSeenKeys: pruneSeenHistory(nextSeen, NOTIFICATION_SEEN_HISTORY_MAX) };
   }
 
   const toasts: NotificationToastData[] = [];
@@ -124,21 +118,16 @@ export function detectNewMessageToasts(options: DetectNewToastsOptions): DetectN
 
     const prev = prevMap.get(t.id);
     const key = createToastDedupeKey(t);
-    // If we cannot build a key, fallback to unread increase heuristic only.
     if (key && nextSeen.has(key)) continue;
 
     let isNew = false;
     if (!prev) {
-      // New thread entirely (first message after baseline) -> toast
       isNew = true;
     } else {
-      // Unread increased or last message timestamp changed (new incoming)
       const unreadIncreased = t.unread_count > prev.unreadCount;
       const messageChanged = t.last_message.created_at !== prev.lastMessageCreatedAt;
-      // sender changed to another user is already filtered, but double-check
       const senderIsOther = t.last_message.sender_id !== currentUserId;
       if (senderIsOther && (unreadIncreased || messageChanged)) {
-        // Ensure not already seen (covers polling duplicate)
         isNew = true;
       }
     }
@@ -157,30 +146,119 @@ export function detectNewMessageToasts(options: DetectNewToastsOptions): DetectN
     });
   }
 
-  // Cap toasts to avoid flood: keep most recent first (nextThreads is ordered by updated_at desc)
   const capped = toasts.slice(0, NOTIFICATION_MAX_TOASTS);
 
-  return { toasts: capped, nextMap, nextSeenKeys: nextSeen };
+  return { toasts: capped, nextMap, nextSeenKeys: pruneSeenHistory(nextSeen, NOTIFICATION_SEEN_HISTORY_MAX) };
 }
 
+// --- New efficient summary types (authenticated, no-store, no per-thread queries) ---
+
+export const notificationMessageSchema = z.object({
+  id: z.string().uuid(),
+  threadId: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  listingTitle: z.string().min(1).max(200),
+  listingImageUrl: z.string().min(1).max(1000),
+  participantName: z.string().min(1).max(100),
+});
+
+export const notificationSummarySchema = z.object({
+  unreadCount: z.number().int().min(0).max(100000),
+  messages: z.array(notificationMessageSchema).max(NOTIFICATION_MESSAGES_LIMIT),
+});
+
+export type NotificationMessage = z.infer<typeof notificationMessageSchema>;
+export type NotificationSummary = z.infer<typeof notificationSummarySchema>;
+
+export function parseNotificationSummary(data: unknown): NotificationSummary | null {
+  const parsed = notificationSummarySchema.safeParse(data);
+  return parsed.success ? parsed.data : null;
+}
+
+export function pruneSeenHistory(set: Set<string>, maxSize: number): Set<string> {
+  if (set.size <= maxSize) return set;
+  const pruned = new Set<string>();
+  // Keep most recent maxSize entries; Set iteration is insertion order, so skip oldest
+  const toSkip = set.size - maxSize;
+  let i = 0;
+  for (const v of set) {
+    if (i >= toSkip) pruned.add(v);
+    i++;
+  }
+  return pruned;
+}
+
+// --- Push endpoint validation (strict allowlist) ---
+
+// Official push service hosts only — verified 2026-11:
+// FCM (Chrome/Edge): fcm.googleapis.com
+// Mozilla (Firefox): updates.push.services.mozilla.com
+// Apple (Safari): web.push.apple.com, api.push.apple.com
+const PUSH_ALLOWLIST_HOSTS = new Set<string>([
+  "fcm.googleapis.com",
+  "android.googleapis.com",
+  "updates.push.services.mozilla.com",
+  "push.services.mozilla.com",
+  "web.push.apple.com",
+  "api.push.apple.com",
+]);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Validate push endpoint for SSRF safety: must be https, web-push service origin.
- * This is a client-side structural check; server must re-validate authoritative recipient.
+ * Validate push endpoint for SSRF safety.
+ * Strict allowlist: https only, port 443 implicit, no credentials, no fragment, exact host allowlist.
+ * Sender must also enforce redirect:error and final destination checks (server-side).
  */
 export function isValidPushEndpoint(endpoint: string): boolean {
   try {
+    if (endpoint.length > 2000) return false;
     const url = new URL(endpoint);
     if (url.protocol !== "https:") return false;
-    // Disallow private/local networks via hostname checks
+    if (url.username || url.password) return false;
+    if (url.hash) return false;
+    // Only default https port allowed (empty port means 443)
+    if (url.port && url.port !== "443") return false;
     const host = url.hostname.toLowerCase();
-    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false;
-    if (host.endsWith(".local") || host.startsWith("10.") || host.startsWith("192.168.")) return false;
-    // Must not be an internal metadata endpoint
-    if (host === "169.254.169.254" || host.includes("metadata.google.internal")) return false;
-    // Length guard
-    if (endpoint.length > 2000) return false;
+    // Reject IP literals and private/local explicitly (allowlist will also reject, but fast-fail)
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local")) return false;
+    if (host.startsWith("10.") || host.startsWith("192.168.") || host === "169.254.169.254" || host.includes("metadata.google.internal")) return false;
+    // Exact allowlist — no wildcards
+    if (!PUSH_ALLOWLIST_HOSTS.has(host)) return false;
     return true;
   } catch {
     return false;
   }
+}
+
+export function isValidThreadId(id: string): boolean {
+  return UUID_RE.test(id);
+}
+
+export function coerceNotificationToastFromMessage(
+  msg: NotificationMessage,
+  mode: string | null | undefined,
+  currentUserId: string | null,
+  openThreadId: string | null,
+  seenKeys: Set<string>
+): NotificationToastData | null {
+  if (mode === "demo") return null;
+  if (!currentUserId) return null;
+  if (openThreadId && msg.threadId === openThreadId) return null;
+  if (seenKeys.has(msg.id)) return null;
+  // Basic validation: ensure UUIDs valid
+  if (!isValidThreadId(msg.threadId) || !isValidThreadId(msg.id)) return null;
+  return {
+    id: msg.id,
+    threadId: msg.threadId,
+    listingTitle: msg.listingTitle,
+    listingImageUrl: msg.listingImageUrl,
+    participantName: msg.participantName,
+    createdAt: msg.createdAt,
+    bodyPreview: null, // summary never carries bodies
+  };
+}
+
+export function getPushAllowlistHosts(): string[] {
+  return Array.from(PUSH_ALLOWLIST_HOSTS);
 }

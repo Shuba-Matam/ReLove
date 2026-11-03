@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Schema-independent web-push foundations.
- * No permission prompt without user gesture. No external sends yet.
- * See docs/NOTIFICATION-PROPOSAL.md for durable subscription schema awaiting owner approval.
+ * Web-push support detection only — no permission prompt, no subscription storage.
+ * Durable subscriptions require owner-approved schema docs/drafts/004_notifications.sql (DEFAULT DISABLED).
+ * UI shows "coming soon" until backend ready; no green-enabled claim.
  */
 
 export type PushSupport = {
