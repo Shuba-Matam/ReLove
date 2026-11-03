@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireAiContext, runAi } from "@/lib/ai/context";
 import { makeCutout } from "@/lib/ai/cutout";
+import { PROVIDER_LIMITS } from "@/lib/ai/provider";
 import { ApiProblem, assertSameOrigin, json, readJson, withApi } from "@/lib/server/http";
 import { uuidSchema } from "@/lib/validation";
 
@@ -30,7 +31,7 @@ export const POST = withApi(async (request: Request) => {
   let uploaded: string | null = null;
   try {
     const { data: source, error: sourceError } = await supabase.storage.from("listing-images").download(listing.image_path);
-    if (sourceError || !source || source.size > 2 * 1024 * 1024) throw new ApiProblem(400, "IMAGE_UNAVAILABLE", "The original photo could not be loaded.");
+    if (sourceError || !source || source.size > PROVIDER_LIMITS.maxImageBytes) throw new ApiProblem(400, "IMAGE_UNAVAILABLE", "The original photo could not be loaded.");
     const original = Buffer.from(await source.arrayBuffer());
     const processed = await runAi(ledger, (signal) => makeCutout({ original, prompt: listing.title, key, signal }), 0);
     uploaded = `${user.id}/${randomUUID()}.jpg`;

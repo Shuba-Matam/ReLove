@@ -49,7 +49,7 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
     <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8">
       <div>
         <ImageToggle imageUrl={listing.image_url} cutoutUrl={listing.cutout_url} title={listing.title} />
-        {isOwner && session?.ai_enabled && !listing.cutout_url && <Button className="mt-3" variant="secondary" size="sm" disabled={processing} onClick={createCutout}>{processing ? "Preparing cutout…" : "Create optional cutout"}</Button>}
+        {isOwner && (session?.ai_features?.cutout ?? session?.ai_enabled) && !listing.cutout_url && <Button className="mt-3" variant="secondary" size="sm" disabled={processing} onClick={createCutout}>{processing ? "Preparing cutout…" : "Create optional cutout"}</Button>}
         {cutoutMessage && <p role="status" className="mt-2 text-sm text-[#9AA4B8]">{cutoutMessage}</p>}
       </div>
 

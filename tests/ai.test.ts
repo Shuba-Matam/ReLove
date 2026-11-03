@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiFailure, runGuardedAi, type UsageLedger } from "@/lib/ai/guard";
 import { draftRequestSchema, parseAiDraft, transcriptionResponseSchema } from "@/lib/ai/schemas";
 import { checkMask, priceWarning } from "@/lib/ai/rules";
 import { validateWav } from "@/lib/ai/audio";
+import { classifyProviderStatus, PROVIDER_LIMITS, getDraftProvider } from "@/lib/ai/provider";
 
 const draft = { title: "Desk chair", description: "A chair with a padded seat.", category_slug: "furniture", tags: ["chair", "seat"], condition_hint: null, brand: null, edition: null };
 const ledger = (): UsageLedger => ({ reserve: vi.fn(async () => ({ allowed: true, usageId: "usage" })), complete: vi.fn(async () => undefined) });
@@ -117,5 +118,112 @@ describe("audio validation", () => {
     expect(validateWav(makeWav(24000, 24000)).sampleRate).toBe(24000);
     expect(() => validateWav(makeWav(8000, 100))).toThrow();
     expect(() => validateWav(makeWav(16000, 16000 * 61))).toThrow();
+  });
+});
+describe("provider hardening — low-funds, nonretryable, bounded sizes, draft provider", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  it("classifies 402 payment vs 403 forbidden as distinct non-retryable vs 429 retryable", () => {
+    expect(classifyProviderStatus(402)).toMatchObject({ code: "AI_PAYMENT", retryable: false });
+    expect(classifyProviderStatus(403)).toMatchObject({ code: "AI_FORBIDDEN", retryable: false });
+    expect(classifyProviderStatus(401)).toMatchObject({ code: "AI_CREDENTIALS", retryable: false });
+    expect(classifyProviderStatus(413)).toMatchObject({ code: "AI_SIZE", retryable: false });
+    expect(classifyProviderStatus(429)).toMatchObject({ code: "AI_RATE_LIMIT", retryable: true });
+    expect(classifyProviderStatus(500)).toMatchObject({ retryable: true });
+    expect(classifyProviderStatus(400)).toMatchObject({ code: "AI_INVALID", retryable: false });
+    expect(classifyProviderStatus(402).message).not.toContain("depleted");
+    expect(classifyProviderStatus(403).message).not.toContain("depleted");
+  });
+  it("exposes bounded limits for image/output/audio (listing-only AI, no search/messages cost)", () => {
+    expect(PROVIDER_LIMITS.maxImageBytes).toBe(2 * 1024 * 1024);
+    expect(PROVIDER_LIMITS.maxAudioBytes).toBe(3_000_000);
+    expect(PROVIDER_LIMITS.maxOutputChars).toBe(32000);
+    expect(PROVIDER_LIMITS.maxDraftChars).toBe(18000);
+  });
+  it("defaults draft provider to baseten, meta only when explicitly set (no silent switch)", () => {
+    vi.stubEnv("AI_DRAFT_PROVIDER", "");
+    expect(getDraftProvider()).toBe("baseten");
+    vi.stubEnv("AI_DRAFT_PROVIDER", "baseten");
+    expect(getDraftProvider()).toBe("baseten");
+    vi.stubEnv("AI_DRAFT_PROVIDER", "meta");
+    expect(getDraftProvider()).toBe("meta");
+    vi.stubEnv("AI_DRAFT_PROVIDER", "llama");
+    expect(() => getDraftProvider()).toThrow();
+  });
+  it("does not retry on 402 payment vs retries on 429 only if deadline allows", async () => {
+    const payOp = vi.fn(async () => { throw new AiFailure("AI_PAYMENT", "AI billing requires attention.", 503, false); });
+    const ledgerQ = ledger();
+    await expect(runGuardedAi({ enabled: true, ledger: ledgerQ, operation: payOp })).rejects.toMatchObject({ code: "AI_PAYMENT" });
+    expect(payOp).toHaveBeenCalledTimes(1);
+    expect(ledgerQ.complete).toHaveBeenCalledTimes(1);
+    const rateOp = vi.fn(async () => { throw new AiFailure("AI_RATE_LIMIT", "busy", 503, true); });
+    const ledgerR = ledger();
+    await expect(runGuardedAi({ enabled: true, ledger: ledgerR, operation: rateOp, maxRetries: 2, timeoutMs: 5000 })).rejects.toThrow();
+    expect(rateOp).toHaveBeenCalledTimes(3);
+  });
+  it("honors fail-closed deadline even when provider hangs", async () => {
+    vi.useFakeTimers();
+    const usage = ledger();
+    let aborted = false;
+    const op = vi.fn(async (signal: AbortSignal) => {
+      signal.addEventListener("abort", () => { aborted = true; });
+      return new Promise<never>(() => {});
+    });
+    const running = runGuardedAi({ enabled: true, ledger: usage, timeoutMs: 50, operation: op });
+    const assert = expect(running).rejects.toMatchObject({ code: "AI_TIMEOUT" });
+    await vi.advanceTimersByTimeAsync(60);
+    await assert;
+    expect(aborted).toBe(true);
+    expect(usage.complete).toHaveBeenCalledWith(expect.any(String), false, expect.any(Number));
+    vi.useRealTimers();
+  });
+  it("does not start provider after reserve deadline, records reserved failure", async () => {
+    vi.useFakeTimers();
+    const usage = ledger();
+    usage.reserve = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+      return { allowed: true, usageId: "usage" };
+    });
+    const op = vi.fn(async () => "ok");
+    const running = runGuardedAi({ enabled: true, ledger: usage, timeoutMs: 50, operation: op as unknown as (s: AbortSignal, a: number) => Promise<string> });
+    const assert = expect(running).rejects.toMatchObject({ code: "AI_TIMEOUT" });
+    await vi.advanceTimersByTimeAsync(90);
+    await assert;
+    expect(op).not.toHaveBeenCalled();
+    expect(usage.complete).toHaveBeenCalledWith("usage", false, expect.any(Number));
+    vi.useRealTimers();
+  });
+  it("counts every attempt including retries and failures atomically (global50/user5 UTC model)", async () => {
+    const usage = ledger();
+    const op = vi.fn()
+      .mockRejectedValueOnce(new AiFailure("AI_PROVIDER", "oops", 503, true))
+      .mockResolvedValueOnce({ title: "ok" } as unknown as string);
+    const result = await runGuardedAi({ enabled: true, ledger: usage, operation: op as unknown as (s: AbortSignal, a: number) => Promise<string>, maxRetries: 1 });
+    expect(result).toEqual({ title: "ok" });
+    expect(usage.reserve).toHaveBeenCalledTimes(2);
+    expect(usage.complete).toHaveBeenCalledTimes(2);
+    expect(usage.complete).toHaveBeenNthCalledWith(1, expect.any(String), false, expect.any(Number));
+    expect(usage.complete).toHaveBeenNthCalledWith(2, expect.any(String), true, expect.any(Number));
+  });
+  it("draft provider selection retains Baseten compatibility and Meta uses fixed api.meta.ai with allowlisted model", async () => {
+    const originalFetch = globalThis.fetch;
+    const mocked = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(draft) } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+    globalThis.fetch = mocked as unknown as typeof fetch;
+    vi.stubEnv("AI_DRAFT_PROVIDER", "baseten");
+    vi.stubEnv("BASETEN_MODEL", "meta-models/muse-spark-open-1026");
+    const { basetenCompletion } = await import("@/lib/ai/provider");
+    await basetenCompletion("test-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000));
+    expect(mocked).toHaveBeenCalledWith(expect.stringContaining("inference.baseten.co"), expect.objectContaining({ method: "POST" }));
+    mocked.mockClear();
+    vi.stubEnv("AI_DRAFT_PROVIDER", "meta");
+    vi.stubEnv("META_MODEL", "muse-spark-1.3");
+    const { metaCompletion } = await import("@/lib/ai/provider");
+    await metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000));
+    expect(mocked).toHaveBeenCalledWith("https://api.meta.ai/v1/chat/completions", expect.objectContaining({ method: "POST" }));
+    const call = mocked.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse((call[1].body as string) ?? "{}");
+    expect(body.model).toBe("muse-spark-1.3");
+    vi.stubEnv("META_MODEL", "Llama-4-Maverick-17B-128E-Instruct-FP8");
+    await expect(metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000))).rejects.toMatchObject({ code: "AI_PROVIDER" });
+    globalThis.fetch = originalFetch;
   });
 });

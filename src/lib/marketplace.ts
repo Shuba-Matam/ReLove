@@ -38,7 +38,8 @@ export interface ThreadSummary {
   updated_at: string;
 }
 export interface ThreadDetail { thread: ThreadSummary; messages: Message[]; has_more?: boolean; before?: string | null }
-export interface SessionInfo { user: Profile | null; mode: AppMode; ai_enabled: boolean; auth_configured: boolean }
+export type AiFeatureAvailability = { draft: boolean; transcribe: boolean; cutout: boolean; moderation: boolean };
+export interface SessionInfo { user: Profile | null; mode: AppMode; ai_enabled: boolean; auth_configured: boolean; ai_features?: AiFeatureAvailability; ai_provider?: "baseten" | "meta" }
 export interface ApiResponse<T> { data: T; mode: AppMode; meta?: { next_cursor?: number | null; total?: number } }
 export interface ApiError { error: { code: string; message: string; fields?: Record<string, string[]> } }
 

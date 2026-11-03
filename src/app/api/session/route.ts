@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/server/supabase";
-import { getAppMode, getAiEnabled, isAuthConfigured } from "@/lib/server/env";
+import { getAiFeatureAvailability, getAppMode, isAuthConfigured } from "@/lib/server/env";
 import { json, withApi } from "@/lib/server/http";
 import type { Profile, SessionInfo } from "@/lib/marketplace";
 
@@ -8,13 +8,16 @@ export const dynamic = "force-dynamic";
 
 export const GET = withApi(async () => {
   const mode = getAppMode();
-  const ai_enabled = getAiEnabled();
+  const availability = getAiFeatureAvailability();
+  const ai_enabled = availability.any;
   const auth_configured = isAuthConfigured();
+  const ai_features = { draft: availability.draft, transcribe: availability.transcribe, cutout: availability.cutout, moderation: availability.moderation } as const;
+  const ai_provider = availability.provider;
 
-  if(mode !== "live") return json({ user:null, mode, ai_enabled:false, auth_configured:false });
+  if(mode !== "live") return json({ user:null, mode, ai_enabled:false, auth_configured:false, ai_features: { draft:false, transcribe:false, cutout:false, moderation:false }, ai_provider });
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    const data: SessionInfo = { user: null, mode, ai_enabled, auth_configured };
+    const data: SessionInfo = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider };
     return json(data);
   }
 
@@ -22,7 +25,7 @@ export const GET = withApi(async () => {
   const authUser = userData?.user ?? null;
 
   if (!authUser) {
-    const data: SessionInfo = { user: null, mode, ai_enabled, auth_configured };
+    const data: SessionInfo = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider };
     return json(data);
   }
 
@@ -53,6 +56,6 @@ export const GET = withApi(async () => {
     };
   }
 
-  const data: SessionInfo = { user, mode, ai_enabled, auth_configured };
+  const data: SessionInfo = { user, mode, ai_enabled, auth_configured, ai_features, ai_provider };
   return json(data);
 });

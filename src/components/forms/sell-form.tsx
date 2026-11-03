@@ -25,6 +25,9 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const { session, loading: sessionLoading } = useSession();
   const isDemo = session?.mode === "demo";
   const canWrite = session?.mode === "live" && Boolean(session.user);
+  const draftAvailable = session?.ai_features?.draft ?? session?.ai_enabled ?? false;
+  const voiceAvailable = session?.ai_features?.transcribe ?? session?.ai_enabled ?? false;
+  const anyAi = session?.ai_features ? (session.ai_features.draft || session.ai_features.transcribe || session.ai_features.cutout) : (session?.ai_enabled ?? false);
 
   const [title, setTitle] = React.useState((initialListing?.title as string) ?? "");
   const [description, setDescription] = React.useState((initialListing?.description as string) ?? "");
@@ -88,7 +91,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   }
 
   async function handleAiDraft() {
-    if (!canWrite || !session?.ai_enabled) { setAiError("AI assistance is off. You can fill in the listing yourself."); return; }
+    if (!canWrite || !draftAvailable) { setAiError(session?.ai_enabled === false || !anyAi ? "AI assistance is off. You can fill in the listing yourself." : "Draft generation is not configured. Fill fields manually."); return; }
     setAiLoading(true);
     setAiError("");
     try {
@@ -127,7 +130,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
       setRecording(false);
       return;
     }
-    if (!canWrite || !session?.ai_enabled) { setAiError("Voice assistance is off. Type your description below."); return; }
+    if (!canWrite || !voiceAvailable) { setAiError(session?.ai_enabled === false || !anyAi ? "Voice assistance is off. Type your description below." : "Voice transcription is not configured. Type your description below."); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -249,21 +252,26 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
 
         <div className="rounded-xl bg-[#01071d] p-3.5 ring-1 ring-[#021640]/50">
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[#9AA4B8]"><Sparkles className="size-3.5 text-[#82b7ff]" /> Optional AI help</div>
-          <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">Never auto-publishes. Apply suggestions one by one and verify.</p>
+          <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">Never auto-publishes. Apply suggestions one by one and verify. Drafts and voice happen before Publish; each regenerate or retry counts against daily limits.</p>
+          <p className="mt-1 text-[11px] leading-4 text-[#9AA4B8]">Original is truth; seller confirms. Uncertain brand/edition/condition remain blank; AI never sets price.</p>
+          {!anyAi && canWrite && !sessionLoading && <p className="mt-2 text-xs leading-5 text-amber-300/90">AI is off or not configured — fill fields manually below. Daily caps do not guarantee credits survive across days.</p>}
+          {anyAi && !draftAvailable && canWrite && <p className="mt-2 text-xs leading-5 text-amber-300/80">Draft generation unavailable with current provider. Voice may still work; otherwise fill manually.</p>}
+          {anyAi && draftAvailable && !voiceAvailable && canWrite && <p className="mt-2 text-xs leading-5 text-amber-300/80">Voice transcription unavailable with current provider. Type description directly.</p>}
           <div className="mt-3 space-y-2.5">
             <div>
               <Label htmlFor="transcript" className="normal-case tracking-normal">Describe the item (for AI draft)</Label>
               <div className="mt-1.5 flex gap-2">
                 <Textarea id="transcript" placeholder="e.g. Used engineering mechanics book, 3rd edition…" value={transcript} onChange={(e)=>setTranscript(e.target.value)} className="flex-1 bg-[#020102]" rows={2} />
-                <Button type="button" variant="secondary" size="icon" onClick={toggleRecording} disabled={!canWrite || (!recording && aiLoading) || !session?.ai_enabled} aria-label={recording ? "Stop recording" : "Start voice recording"} title={recording ? "Stop" : "Record voice"} className="shrink-0">
+                <Button type="button" variant="secondary" size="icon" onClick={toggleRecording} disabled={!canWrite || (!recording && aiLoading) || !voiceAvailable} aria-label={recording ? "Stop recording" : "Start voice recording"} title={recording ? "Stop" : voiceAvailable ? "Record voice" : "Voice unavailable"} className="shrink-0">
                   <Mic className={recording ? "text-red-400 animate-pulse" : ""} />
                 </Button>
               </div>
+              {!voiceAvailable && canWrite && <p className="mt-1 text-[11px] text-[#9AA4B8]">Voice off — type your description. Each recording is a counted AI call if enabled.</p>}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="primary" size="sm" onClick={handleAiDraft} disabled={aiLoading || !canWrite || !session?.ai_enabled || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate draft"}</Button>
-              {aiLoading && <span className="text-xs text-[#9AA4B8]" role="status">Working…</span>}
-              {!aiLoading && aiDraft && suggestedFields.length > 0 && <span className="text-xs text-[#9AA4B8]">Suggestions ready</span>}
+              <Button type="button" variant="primary" size="sm" onClick={handleAiDraft} disabled={aiLoading || !canWrite || !draftAvailable || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate draft"}</Button>
+              {aiLoading && <span className="text-xs text-[#9AA4B8]" role="status">Working… (counts toward limit)</span>}
+              {!aiLoading && aiDraft && suggestedFields.length > 0 && <span className="text-xs text-[#9AA4B8]">Suggestions ready — confirm before publishing</span>}
             </div>
             {aiError && <p className="text-xs leading-5 text-amber-300" role="alert">{aiError}</p>}
             {aiDraft && suggestedFields.length > 0 && (
@@ -275,10 +283,12 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
                     <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0" onClick={() => applySuggestion(f)}>Apply</Button>
                   </div>
                 ))}
-                <p className="text-[11px] leading-4 text-[#9AA4B8]">Manual entry always works if AI is unavailable.</p>
+                <p className="text-[11px] leading-4 text-[#9AA4B8]">Manual entry always works if AI is unavailable. Original photo is source of truth.</p>
               </div>
             )}
-            {!session?.ai_enabled && canWrite && <p className="text-xs text-[#9AA4B8]">AI is off — fill fields manually below.</p>}
+            {!draftAvailable && canWrite && anyAi && <p className="text-xs text-[#9AA4B8]">Drafts unavailable with current config — enter title/description manually.</p>}
+            {!anyAi && canWrite && <p className="text-xs text-[#9AA4B8]">AI is off — fill fields manually below.</p>}
+            <p className="text-[10px] leading-4 text-[#6B7280]">Daily limits reset at UTC midnight; lifetime credit protection requires owner-approved budget caps (see docs/AI-BUDGET-PROPOSAL.md).</p>
           </div>
         </div>
 

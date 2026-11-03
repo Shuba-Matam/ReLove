@@ -410,6 +410,31 @@ async function main() {
   } else {
     infos.push("BASETEN_MODEL unset — runtime default meta-models/muse-spark-open-1026 applies when AI enabled");
   }
+  const draftProvider = (env.AI_DRAFT_PROVIDER ?? "").trim().toLowerCase();
+  if (draftProvider) {
+    if (!["baseten", "meta"].includes(draftProvider)) {
+      errors.push(`AI_DRAFT_PROVIDER must be baseten|meta if set (got "${draftProvider}")`);
+    } else {
+      infos.push(`AI_DRAFT_PROVIDER=${draftProvider} (default baseten; meta muse-spark-1.3 approved for drafts, all gates remain off)`);
+      if (draftProvider === "meta" && !metaKey) warnings.push("AI_DRAFT_PROVIDER=meta requires META_API_KEY — draft will be unavailable until coordinator supplies key");
+      if (draftProvider === "meta" && metaKey) infos.push("Meta draft provider selected — requires META_MODEL=muse-spark-1.3 standard (no Contributor); all gates remain off until activation");
+    }
+    const metaModel = (env.META_MODEL ?? "").trim();
+    if (draftProvider === "meta") {
+      if (!metaModel) warnings.push("AI_DRAFT_PROVIDER=meta requires META_MODEL=muse-spark-1.3 — unspecified model fails closed");
+      else if (metaModel !== "muse-spark-1.3") errors.push(`META_MODEL must be muse-spark-1.3 when AI_DRAFT_PROVIDER=meta (got "${metaModel}") — invalid model fails closed`);
+      else infos.push(`META_MODEL: ${metaModel} (allowlisted)`);
+    } else if (metaModel) {
+      infos.push(`META_MODEL set but ignored for baseten provider (${metaModel.length} chars)`);
+    }
+    if ((env.META_CHAT_ENDPOINT ?? "").trim()) {
+      errors.push("META_CHAT_ENDPOINT is not allowed — endpoint is fixed to https://api.meta.ai/v1/chat/completions; remove this variable");
+    }
+  } else {
+    infos.push("AI_DRAFT_PROVIDER unset — defaults to baseten");
+    if ((env.META_MODEL ?? "").trim()) infos.push(`META_MODEL set but ignored without AI_DRAFT_PROVIDER=meta`);
+    if ((env.META_CHAT_ENDPOINT ?? "").trim()) errors.push("META_CHAT_ENDPOINT is not allowed — remove this variable");
+  }
 
   if (aiFlag === true) {
     if (!basetenKey && !metaKey) {
@@ -421,11 +446,18 @@ async function main() {
       else infos.push(`BASETEN_API_KEY: ${maskPresence(basetenKey)}`);
       if (!metaKey) warnings.push("META_API_KEY unset — transcribe/cutout will be unavailable (requires META_API_KEY)");
       else infos.push(`META_API_KEY: ${maskPresence(metaKey)}`);
+      const feats = [];
+      const provider = draftProvider === "meta" ? "meta" : "baseten";
+      if ((provider === "meta" ? metaKey : basetenKey)) feats.push("draft");
+      if (metaKey) feats.push("transcribe/cutout");
+      if (basetenKey) feats.push("moderation");
+      if (feats.length) infos.push(`AI features env-available: ${feats.join(", ")} (DB caps still required)`);
     }
     // Also check that caps are non-zero if AI enabled? In context.ts, if caps zero then AI throws disabled even with key.
     if (dailyRes.value === 0 || userRes.value === 0) {
       warnings.push("AI_ENABLED=true but AI_DAILY_LIMIT or AI_USER_DAILY_LIMIT is 0 — runtime will disable AI (cap returns 0). Set >0 or disable AI_ENABLED.");
     }
+    if (dailyRes.value !== null && dailyRes.value !== 0 && dailyRes.value < 50) infos.push("AI_DAILY_LIMIT below default 50 — ensure reserve for judging remains (see docs/AI-BUDGET-PROPOSAL.md)");
   } else {
     // AI disabled: keys should not be required, but warn if dangling?
     if (basetenKey || metaKey) {
@@ -467,8 +499,12 @@ async function main() {
         AI_ENABLED: maskPresence(env.AI_ENABLED),
         AI_DAILY_LIMIT: maskPresence(env.AI_DAILY_LIMIT),
         AI_USER_DAILY_LIMIT: maskPresence(env.AI_USER_DAILY_LIMIT),
+        AI_DRAFT_PROVIDER: maskPresence(env.AI_DRAFT_PROVIDER),
         BASETEN_API_KEY: maskPresence(env.BASETEN_API_KEY),
+        BASETEN_MODEL: maskPresence(env.BASETEN_MODEL),
         META_API_KEY: maskPresence(env.META_API_KEY),
+        META_MODEL: maskPresence(env.META_MODEL),
+        META_CHAT_ENDPOINT: maskPresence(env.META_CHAT_ENDPOINT),
       },
     };
     console.log(JSON.stringify(payload, null, 2));

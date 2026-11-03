@@ -1,7 +1,9 @@
 // Explicit manual smoke test through the authenticated application route.
-// Every provider attempt still passes the kill switch and atomic database budget.
-// No paid calls without owner explicitly running this script with their own session cookie.
+// Every provider attempt still passes the kill switch and atomic database budget (global50/user5 UTC) and 20s fail-closed deadline.
+// No paid calls without owner explicitly running this script with their own session cookie and spend ceiling.
 // Do not copy secrets; SMOKE_SESSION_COOKIE stays in your shell only.
+// One image draft per run; each retry/regenerate is a counted call before publish. Safe output only: no image paths, transcripts, or keys printed.
+// For account read-only discovery (no billable call): check GET /api/session (ai_features) and provider /v1/models auth probes locally with coordinator key only.
 const origin = process.env.SMOKE_APP_ORIGIN || "http://localhost:3000";
 const cookie = process.env.SMOKE_SESSION_COOKIE;
 const args = process.argv.slice(2);
