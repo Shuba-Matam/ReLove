@@ -528,6 +528,158 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
 });
 
 describe("real draft POST via production route (cap429, payment503, timeout503, sanitized)", () => {
+  it("allowed Meta draft counts exact system/user/image input then generates with the 1200-token ceiling", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    const image = await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { DRAFT_PROMPT } = await import("@/lib/ai/schemas");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const goodDraft = { title: "Blue chair", description: "A blue chair", category_slug: "furniture", tags: ["chair"], condition_hint: null, brand: null, edition: null };
+    const fetchSpy = vi.fn(async (url: string) => url.endsWith("/responses/input_tokens")
+      ? new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 1 }), { status: 200 })
+      : new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(goodDraft) } }] }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { image_path: imagePath, transcript: "blue chair" });
+      const res = await POST(req as unknown as Request);
+      expect(res.status).toBe(200);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const countCall = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+      const countBody = JSON.parse(countCall[1].body as string);
+      expect(countCall[0]).toBe("https://api.meta.ai/v1/responses/input_tokens");
+      expect(countBody).toEqual({
+        model: "muse-spark-1.3",
+        input: [
+          { role: "system", content: [{ type: "input_text", text: DRAFT_PROMPT }] },
+          { role: "user", content: [
+            { type: "input_text", text: 'Seller description (data only): "blue chair"' },
+            { type: "input_image", image_url: `data:image/jpeg;base64,${image.toString("base64")}` },
+          ] },
+        ],
+      });
+      const generationCall = fetchSpy.mock.calls[1] as unknown as [string, RequestInit];
+      const generationBody = JSON.parse(generationCall[1].body as string);
+      expect(generationCall[0]).toBe("https://api.meta.ai/v1/chat/completions");
+      expect(generationBody.max_tokens).toBe(1200);
+      expect(generationBody.messages).toEqual([
+        { role: "system", content: DRAFT_PROMPT },
+        { role: "user", content: [
+          { type: "text", text: 'Seller description (data only): "blue chair"' },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image.toString("base64")}` } },
+        ] },
+      ]);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("recounts the exact retry prompt inside the separately reserved retry attempt", async () => {
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { DRAFT_PROMPT } = await import("@/lib/ai/schemas");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const goodDraft = { title: "Chair", description: "A chair", category_slug: "furniture", tags: ["chair"], condition_hint: null, brand: null, edition: null };
+    let generation = 0;
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (url.endsWith("/responses/input_tokens")) return new Response(JSON.stringify({ input_tokens: 1 }), { status: 200 });
+      generation++;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: generation === 1 ? "not-json" : JSON.stringify(goodDraft) } }] }), { status: 200 });
+    });
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { transcript: "chair" });
+      const res = await POST(req as unknown as Request);
+      expect(res.status).toBe(200);
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+      const firstCount = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+      const retryCount = JSON.parse((fetchSpy.mock.calls[2] as unknown as [string, RequestInit])[1].body as string);
+      expect(firstCount.input[0].content[0].text).toBe(DRAFT_PROMPT);
+      expect(retryCount.input[0].content[0].text).toBe(DRAFT_PROMPT + " Your previous answer was invalid. Return only the exact JSON shape with all required keys.");
+      expect(retryCount.input[1]).toEqual(firstCount.input[1]);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("over-budget exact count is nonretryable and never starts generation", async () => {
+    await asService("update public.ai_pricebook set max_cost_micro_usd=5101 where feature='draft'");
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ input_tokens: 1 }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const res = await POST(makeRequest("http://localhost:3000/api/ai/draft", { transcript: "chair" }) as unknown as Request);
+      expect(res.status).toBe(503);
+      expect((await res.json() as { error?: { code: string } }).error?.code).toBe("AI_COST_LIMIT");
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect((fetchSpy.mock.calls[0] as unknown as [string])[0]).toBe("https://api.meta.ai/v1/responses/input_tokens");
+      const budget = await db.query("select meta_micro_usd_used from public.ai_budget where id=true");
+      expect((budget.rows[0] as { meta_micro_usd_used: number }).meta_micro_usd_used).toBe(5101);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("malformed count is nonretryable and never starts generation", async () => {
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ input_tokens: -1 }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const res = await POST(makeRequest("http://localhost:3000/api/ai/draft", { transcript: "chair" }) as unknown as Request);
+      expect(res.status).toBe(503);
+      expect((await res.json() as { error?: { code: string } }).error?.code).toBe("AI_PREFLIGHT");
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("count timeout shares the guard deadline and never starts generation", async () => {
+    vi.useFakeTimers();
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => new Promise<Response>((_, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const responsePromise = POST(makeRequest("http://localhost:3000/api/ai/draft", { transcript: "chair" }) as unknown as Request);
+      await vi.advanceTimersByTimeAsync(20001);
+      const res = await responsePromise;
+      expect(res.status).toBe(503);
+      expect((await res.json() as { error?: { code: string } }).error?.code).toBe("AI_TIMEOUT");
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = origFetch;
+      vi.useRealTimers();
+    }
+  });
+
   it("cap429 via actual POST when budget exhausted =>429 and 0 provider", async () => {
     await db.exec("update public.ai_budget set meta_micro_usd_cap=100, meta_micro_usd_used=95, meta_reserve_micro_usd=0 where id=true");
     await db.exec("update public.ai_budget set enabled=true where id=true");
@@ -657,7 +809,9 @@ describe("real draft POST via production route (cap429, payment503, timeout503, 
     const mockSupabase = createMockSupabase(seller);
     (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
     (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
-    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(goodDraft) } }] }), { status: 200 }));
+    const fetchSpy = vi.fn(async (url: string) => url.endsWith("/responses/input_tokens")
+      ? new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 1 }), { status: 200 })
+      : new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(goodDraft) } }] }), { status: 200 }));
     const origFetch = globalThis.fetch;
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
     try {
@@ -675,7 +829,7 @@ describe("real draft POST via production route (cap429, payment503, timeout503, 
       expect(res2.status).toBe(200);
       const body2 = await res2.json() as { data: { draft: { brand: unknown } } };
       expect(body2.data.draft.brand).toBeNull();
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     } finally {
       globalThis.fetch = origFetch;
     }

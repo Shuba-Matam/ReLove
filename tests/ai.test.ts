@@ -206,7 +206,9 @@ describe("provider hardening — low-funds, nonretryable, bounded sizes, draft p
   });
   it("draft provider selection retains Baseten compatibility and Meta uses fixed api.meta.ai with allowlisted model", async () => {
     const originalFetch = globalThis.fetch;
-    const mocked = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(draft) } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+    const mocked = vi.fn(async (url: string) => url.endsWith("/responses/input_tokens")
+      ? new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 1 }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(draft) } }] }), { status: 200, headers: { "content-type": "application/json" } }));
     globalThis.fetch = mocked as unknown as typeof fetch;
     vi.stubEnv("AI_DRAFT_PROVIDER", "baseten");
     vi.stubEnv("BASETEN_MODEL", "meta-models/muse-spark-open-1026");
@@ -217,13 +219,16 @@ describe("provider hardening — low-funds, nonretryable, bounded sizes, draft p
     vi.stubEnv("AI_DRAFT_PROVIDER", "meta");
     vi.stubEnv("META_MODEL", "muse-spark-1.3");
     const { metaCompletion } = await import("@/lib/ai/provider");
-    await metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000));
-    expect(mocked).toHaveBeenCalledWith("https://api.meta.ai/v1/chat/completions", expect.objectContaining({ method: "POST" }));
-    const call = mocked.mock.calls[0] as unknown as [string, RequestInit];
+    const pricebook = { feature: "draft", provider: "meta", model: "muse-spark-1.3", max_cost_micro_usd: 8500, enabled: true, input_max_chars: 8000, output_max_tokens: 1200, max_duration_sec: null, version: 1 };
+    await metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000), pricebook);
+    expect(mocked).toHaveBeenNthCalledWith(1, "https://api.meta.ai/v1/responses/input_tokens", expect.objectContaining({ method: "POST" }));
+    expect(mocked).toHaveBeenNthCalledWith(2, "https://api.meta.ai/v1/chat/completions", expect.objectContaining({ method: "POST" }));
+    const call = mocked.mock.calls[1] as unknown as [string, RequestInit];
     const body = JSON.parse((call[1].body as string) ?? "{}");
     expect(body.model).toBe("muse-spark-1.3");
+    expect(body.max_tokens).toBe(1200);
     vi.stubEnv("META_MODEL", "Llama-4-Maverick-17B-128E-Instruct-FP8");
-    await expect(metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000))).rejects.toMatchObject({ code: "AI_PROVIDER" });
+    await expect(metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000), pricebook)).rejects.toMatchObject({ code: "AI_PROVIDER" });
     globalThis.fetch = originalFetch;
   });
 });

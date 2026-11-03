@@ -1,8 +1,22 @@
 import "server-only";
 import { z } from "zod";
 import { AiFailure } from "./guard";
+import type { PricebookRow } from "./meter";
 
 const completion = z.object({ choices: z.array(z.object({ finish_reason: z.string().nullable(), message: z.object({ content: z.string().nullable(), refusal: z.string().nullable().optional() }) })).min(1) });
+const metaInputTokenCount = z.object({
+  input_tokens: z.number().int().nonnegative().refine(Number.isSafeInteger),
+});
+
+const metaChatContent = z.array(z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }).strict(),
+  z.object({
+    type: z.literal("image_url"),
+    image_url: z.object({
+      url: z.string().regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/),
+    }).strict(),
+  }).strict(),
+])).min(1).max(2);
 
 export async function readLimitedText(response: Response, limit = 32000): Promise<string> {
   if (!response.body) throw new AiFailure("AI_RESPONSE", "AI returned an empty response.", 503, true);
@@ -49,8 +63,15 @@ export const PROVIDER_LIMITS = {
 
 export const BASETEN_ENDPOINT = "https://inference.baseten.co/v1/chat/completions";
 export const META_ENDPOINT = "https://api.meta.ai/v1/chat/completions";
+export const META_INPUT_TOKENS_ENDPOINT = "https://api.meta.ai/v1/responses/input_tokens";
 export const SUPPORTED_META_MODELS = ["muse-spark-1.3"] as const;
 export const DEFAULT_BASETEN_MODEL = "meta-models/muse-spark-open-1026";
+
+// Verified 2026-11-04 for Meta-hosted Muse Spark 1.3 Standard mode only:
+// https://dev.meta.ai/docs/pricing-rate-limits
+// Input $1.25/M tokens, output $4.25/M tokens. Integer units are 1/100 microUSD/token.
+const META_MUSE_SPARK_1_3_STANDARD_INPUT_CENTI_MICRO_USD = 125n;
+const META_MUSE_SPARK_1_3_STANDARD_OUTPUT_CENTI_MICRO_USD = 425n;
 
 /**
  * Baseten contract verified 2026-11-02:
@@ -109,15 +130,79 @@ export async function basetenCompletion(key: string, content: unknown[], prompt:
   return choice.message.content;
 }
 
-export async function metaCompletion(key: string, content: unknown[], prompt: string, signal: AbortSignal): Promise<string> {
+function metaResponsesInput(content: unknown[], prompt: string) {
+  const parsed = metaChatContent.safeParse(content);
+  if (!parsed.success) throw new AiFailure("AI_PREFLIGHT", "AI cost checks could not validate this request. Continue manually.", 503, false);
+  return [
+    { role: "system", content: [{ type: "input_text", text: prompt }] },
+    {
+      role: "user",
+      content: parsed.data.map((part) => part.type === "text"
+        ? { type: "input_text" as const, text: part.text }
+        : { type: "input_image" as const, image_url: part.image_url.url }),
+    },
+  ];
+}
+
+function metaWorstCaseCostMicroUsd(inputTokens: number, maxOutputTokens: number): number {
+  if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 0) {
+    throw new AiFailure("AI_PREFLIGHT", "AI cost checks returned an invalid result. Continue manually.", 503, false);
+  }
+  const centiMicroUsd = BigInt(inputTokens) * META_MUSE_SPARK_1_3_STANDARD_INPUT_CENTI_MICRO_USD
+    + BigInt(maxOutputTokens) * META_MUSE_SPARK_1_3_STANDARD_OUTPUT_CENTI_MICRO_USD;
+  const microUsd = (centiMicroUsd + 99n) / 100n;
+  if (microUsd > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new AiFailure("AI_PREFLIGHT", "AI cost checks returned an invalid result. Continue manually.", 503, false);
+  }
+  return Number(microUsd);
+}
+
+async function metaCountInputTokens(key: string, model: string, input: ReturnType<typeof metaResponsesInput>, signal: AbortSignal): Promise<number> {
+  let response: Response;
+  try {
+    response = await fetch(META_INPUT_TOKENS_ENDPOINT, {
+      method: "POST", signal, cache: "no-store", redirect: "error",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input }),
+    });
+  } catch {
+    if (signal.aborted) throw new AiFailure("AI_TIMEOUT", "AI took too long. Continue with the manual form.", 503, false);
+    throw new AiFailure("AI_PREFLIGHT", "AI cost checks are unavailable. Continue manually.", 503, false);
+  }
+  if (!response.ok) {
+    const info = classifyProviderStatus(response.status);
+    throw new AiFailure(info.code, info.message, info.http, false);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(await readLimitedText(response, 4096));
+  } catch {
+    throw new AiFailure("AI_PREFLIGHT", "AI cost checks returned an invalid result. Continue manually.", 503, false);
+  }
+  const parsed = metaInputTokenCount.safeParse(json);
+  if (!parsed.success) throw new AiFailure("AI_PREFLIGHT", "AI cost checks returned an invalid result. Continue manually.", 503, false);
+  return parsed.data.input_tokens;
+}
+
+export async function metaCompletion(key: string, content: unknown[], prompt: string, signal: AbortSignal, pricebook: PricebookRow): Promise<string> {
   const model = process.env.META_MODEL?.trim() || "";
   if (!(SUPPORTED_META_MODELS as unknown as string[]).includes(model)) {
     throw new AiFailure("AI_PROVIDER", "AI provider configuration is invalid. Continue manually.", 503, false);
   }
+  if (pricebook.provider !== "meta" || pricebook.model !== model || !pricebook.enabled || !Number.isSafeInteger(pricebook.max_cost_micro_usd)) {
+    throw new AiFailure("AI_PREFLIGHT", "AI cost checks are unavailable. Continue manually.", 503, false);
+  }
+  const maxOutputTokens = PROVIDER_LIMITS.maxTokens;
+  const input = metaResponsesInput(content, prompt);
+  const inputTokens = await metaCountInputTokens(key, model, input, signal);
+  const worstCaseMicroUsd = metaWorstCaseCostMicroUsd(inputTokens, maxOutputTokens);
+  if (worstCaseMicroUsd > pricebook.max_cost_micro_usd) {
+    throw new AiFailure("AI_COST_LIMIT", "This AI request exceeds the configured cost limit. Continue manually.", 503, false);
+  }
   const response = await fetch(META_ENDPOINT, {
     method: "POST", signal, cache: "no-store", redirect: "error",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: prompt }, { role: "user", content }], max_tokens: PROVIDER_LIMITS.maxTokens }),
+    body: JSON.stringify({ model, messages: [{ role: "system", content: prompt }, { role: "user", content }], max_tokens: maxOutputTokens }),
   });
   checkProviderResponse(response);
   let json: unknown;
@@ -129,8 +214,8 @@ export async function metaCompletion(key: string, content: unknown[], prompt: st
   return choice.message.content;
 }
 
-export async function draftCompletion(key: string, content: unknown[], prompt: string, signal: AbortSignal): Promise<string> {
+export async function draftCompletion(key: string, content: unknown[], prompt: string, signal: AbortSignal, pricebook: PricebookRow): Promise<string> {
   const provider = getDraftProvider();
-  if (provider === "meta") return metaCompletion(key, content, prompt, signal);
+  if (provider === "meta") return metaCompletion(key, content, prompt, signal, pricebook);
   return basetenCompletion(key, content, prompt, signal);
 }

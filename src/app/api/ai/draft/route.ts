@@ -87,7 +87,7 @@ export const POST = withApi(async (request: Request) => {
   const draft = await runAi(
     ledger,
     async (signal, attempt) => {
-      const raw = await draftCompletion(key, content, DRAFT_PROMPT + (attempt ? " Your previous answer was invalid. Return only the exact JSON shape with all required keys." : ""), signal);
+      const raw = await draftCompletion(key, content, DRAFT_PROMPT + (attempt ? " Your previous answer was invalid. Return only the exact JSON shape with all required keys." : ""), signal, pricebookRow);
       try {
         return parseAiDraft(raw);
       } catch {
