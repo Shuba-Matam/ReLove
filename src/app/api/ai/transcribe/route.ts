@@ -3,6 +3,7 @@ import { validateWav } from "@/lib/ai/audio";
 import { transcriptionResponseSchema } from "@/lib/ai/schemas";
 import { checkProviderResponse, PROVIDER_LIMITS, readLimitedText } from "@/lib/ai/provider";
 import { ApiProblem, assertSameOrigin, json, readFormLimited, withApi } from "@/lib/server/http";
+import { getAiMaxRetries } from "@/lib/server/env";
 
 /**
  * POST /api/ai/transcribe — multipart file -> { transcript }. WAV mono 16-bit 16/24kHz max 60s.
@@ -62,7 +63,7 @@ export const POST = withApi(async (request: Request) => {
       return transcriptionResponseSchema.parse(parsed).transcript;
     },
     {
-      maxRetries: 1,
+      maxRetries: getAiMaxRetries(),
       validateCached: (cached) => {
         if (typeof cached === "string") {
           const trimmed = cached.trim();

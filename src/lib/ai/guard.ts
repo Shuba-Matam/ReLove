@@ -81,10 +81,12 @@ export async function runMeteredGuarded<T>(options: {
         return { status: "duplicate_pending" };
       }
       const reason = reservation.reason ?? "unknown";
+      if (reason === "pricebook_stale") {
+        throw new AiFailure("AI_LIMIT_UNAVAILABLE", "AI assistance is unavailable. You can continue manually.", 503, false);
+      }
       if (reason === "disabled" || reason === "invalid_limits" || reason === "budget_unconfigured" || reason === "feature_disabled" || reason === "unpriced_feature") {
         throw new AiFailure("AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.", 503, false);
       }
-      // budget_exhausted, global_limit, user_limit, max_attempts, source_mismatch etc. are limits
       throw new AiFailure("AI_LIMIT", "AI has reached its usage limit. You can still post manually.", 429, false);
     }
 

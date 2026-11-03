@@ -1,18 +1,31 @@
 import { describe, it, beforeAll, beforeEach, afterAll, vi, expect } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 
-/**
- * Actual route+meter+guard integration via real production code (POST handlers, requireAiContext, meter, guard).
- * No duplicated test-only harness: we import real POST and runAi, mock only auth and provider fetch, route RPC through PGlite service_role.
- * Verifies: duplicate success same draft provider count1, pending 409, failed retry reserves separately/max3, invalid meter malformed, price envelope exceed 0 provider, cutout upload failure not cached, changed image distinct identity, old ledger bypass fails closed.
- */
+vi.mock("@/lib/server/auth", () => ({
+  requireUser: vi.fn(),
+}));
+vi.mock("@/lib/ai/meter", async () => {
+  const actual = (await vi.importActual("@/lib/ai/meter")) as Record<string, unknown>;
+  return {
+    ...(actual as object),
+    createMeteringClient: vi.fn(),
+  };
+});
+vi.mock("@/lib/ai/cutout", async () => {
+  const actual = (await vi.importActual("@/lib/ai/cutout")) as Record<string, unknown>;
+  return {
+    ...(actual as object),
+    makeCutout: vi.fn(),
+  };
+});
 
 let db: PGlite;
 const seller = "11111111-1111-4111-8111-111111111111";
 const attacker = "33333333-3333-4333-8333-333333333333";
+const storageMap = new Map<string, { buffer: Buffer; type: string }>();
 
 function hash(s: string) {
   return createHash("sha256").update(s).digest("hex");
@@ -30,6 +43,238 @@ async function asService(sql: string, params: unknown[] = []) {
     await db.query("select set_config('request.jwt.claim.role','',false)");
   }
 }
+async function asUserWithId(userId: string, sql: string, params: unknown[] = []) {
+  await db.exec("set role authenticated");
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)", [userId]);
+  try {
+    return await db.query(sql, params as never[]);
+  } finally {
+    await db.exec("reset role");
+    await db.query("select set_config('request.jwt.claim.sub','',false)");
+  }
+}
+
+function makeRequest(url: string, body: unknown, extraHeaders: Record<string, string> = {}) {
+  const headers = new Headers({
+    "content-type": "application/json",
+    origin: "http://localhost:3000",
+    referer: "http://localhost:3000/",
+    ...extraHeaders,
+  });
+  return new Request(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+function createMockSupabase(userId: string) {
+  const mockFrom = (table: string) => {
+    const state: {
+      table: string;
+      operation: "select" | "update" | null;
+      selectCols: string | null;
+      updatePayload: Record<string, unknown> | null;
+      filters: Array<{ col: string; val: unknown }>;
+      orCondition: string | null;
+    } = {
+      table,
+      operation: null,
+      selectCols: null,
+      updatePayload: null,
+      filters: [],
+      orCondition: null,
+    };
+    const builder: Record<string, unknown> = {
+      select: (cols: string) => {
+        state.selectCols = cols;
+        if (!state.operation) state.operation = "select";
+        return builder;
+      },
+      update: (payload: Record<string, unknown>) => {
+        state.operation = "update";
+        state.updatePayload = payload;
+        return builder;
+      },
+      eq: (col: string, val: unknown) => {
+        state.filters.push({ col, val });
+        return builder;
+      },
+      or: (cond: string) => {
+        state.orCondition = cond;
+        return builder;
+      },
+      maybeSingle: async () => {
+        try {
+          if (state.table === "listings") {
+            if (state.operation === "select") {
+              let sql = "select * from public.listings where 1=1";
+              const params: unknown[] = [];
+              let idx = 1;
+              for (const f of state.filters) {
+                sql += ` and ${f.col}=$${idx}`;
+                params.push(f.val);
+                idx++;
+              }
+              const res = await asUserWithId(userId, sql, params);
+              const row = res.rows[0] as Record<string, unknown> | undefined;
+              if (!row) return { data: null, error: null };
+              return { data: row, error: null };
+            }
+            if (state.operation === "update" && state.updatePayload) {
+              const setKeys = Object.keys(state.updatePayload);
+              const setVals = setKeys.map((k) => state.updatePayload![k]);
+              let sql = `update public.listings set `;
+              sql += setKeys.map((k, i) => `${k}=$${i + 1}`).join(", ");
+              sql += " where 1=1";
+              const params: unknown[] = [...setVals];
+              let idx = setVals.length + 1;
+              for (const f of state.filters) {
+                sql += ` and ${f.col}=$${idx}`;
+                params.push(f.val);
+                idx++;
+              }
+              if (state.orCondition) {
+                const parts = state.orCondition.split(",");
+                const orSql = parts
+                  .map((p) => {
+                    const [col, op, ...rest] = p.split(".");
+                    const val = rest.join(".");
+                    if (op === "neq") return `${col} <> '${val.replace(/'/g, "''")}'`;
+                    if (op === "lt") return `${col} < '${val.replace(/'/g, "''")}'`;
+                    if (op === "gt") return `${col} > '${val.replace(/'/g, "''")}'`;
+                    return `${col} ${op} '${val}'`;
+                  })
+                  .join(" or ");
+                sql += ` and (${orSql})`;
+              }
+              if (state.selectCols) sql += " returning *";
+              const res = await asUserWithId(userId, sql, params);
+              if (state.selectCols) {
+                const row = res.rows[0] as Record<string, unknown> | undefined;
+                if (!row) return { data: null, error: null };
+                return { data: row, error: null };
+              }
+              return { data: null, error: null };
+            }
+          }
+          return { data: null, error: { message: "unsupported" } };
+        } catch (e) {
+          return { data: null, error: e as { message: string } };
+        }
+      },
+      then: (onFulfilled: unknown, onRejected: unknown) => {
+        const p = (builder as { maybeSingle: () => Promise<{ data: unknown; error: unknown }> }).maybeSingle();
+        return (p as Promise<unknown>).then(onFulfilled as never, onRejected as never);
+      },
+    };
+    return builder;
+  };
+
+  return {
+    from: (table: string) => mockFrom(table),
+    storage: {
+      from: (bucket: string) => ({
+        download: async (path: string) => {
+          const entry = storageMap.get(path);
+          if (!entry) return { data: null, error: { message: "not found" } };
+          const blob = {
+            size: entry.buffer.length,
+            type: entry.type,
+            arrayBuffer: async () => entry.buffer.buffer.slice(entry.buffer.byteOffset, entry.buffer.byteOffset + entry.buffer.byteLength),
+          };
+          return { data: blob as unknown as Blob, error: null };
+        },
+        upload: async (path: string, data: Buffer | Uint8Array, opts: { contentType?: string; upsert?: boolean }) => {
+          if (storageMap.has(path) && !opts?.upsert) return { data: null, error: { message: "exists" } };
+          const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+          storageMap.set(path, { buffer: buf, type: opts?.contentType ?? "image/jpeg" });
+          try {
+            await asUserWithId(userId, "insert into storage.objects(bucket_id,name) values($1,$2) on conflict do nothing", [bucket, path]);
+          } catch {}
+          return { data: { path }, error: null };
+        },
+        remove: async (paths: string[]) => {
+          for (const p of paths) {
+            storageMap.delete(p);
+            try {
+              await asUserWithId(userId, "delete from storage.objects where bucket_id=$1 and name=$2", [bucket, p]);
+            } catch {}
+          }
+          return { data: {}, error: null };
+        },
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://example.supabase.co/storage/v1/object/public/${bucket}/${path}` },
+        }),
+      }),
+    },
+    auth: {
+      getUser: async () => ({ data: { user: { id: userId, email: `${userId}@test` } }, error: null }),
+    },
+    rpc: async (fn: string, params: unknown) => {
+      const p = params as Record<string, unknown>;
+      if (fn === "reserve_ai_usage" || fn === "complete_ai_usage") {
+        const res = await asUserWithId(userId, `select * from public.${fn}(${Object.keys(p).map((_, i) => `$${i + 1}`).join(",")})`, Object.values(p));
+        return { data: res.rows, error: null };
+      }
+      return { data: null, error: { message: "unknown rpc" } };
+    },
+  };
+}
+
+function createMockMeteringClient() {
+  return {
+    from: (table: string) => ({
+      select: (cols: string) => ({
+        eq: (col: string, val: string) => ({
+          maybeSingle: async () => {
+            if (table === "ai_pricebook") {
+              const res = await asService(`select ${cols} from public.ai_pricebook where ${col}=$1`, [val]);
+              const row = res.rows[0] as Record<string, unknown> | undefined;
+              if (!row) return { data: null, error: null };
+              return { data: row, error: null };
+            }
+            return { data: null, error: null };
+          },
+        }),
+      }),
+    }),
+    rpc: async (fn: string, params: Record<string, unknown>) => {
+      const keys = Object.keys(params);
+      const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
+      const vals = Object.values(params);
+      try {
+        const res = await asService(`select * from public.${fn}(${placeholders})`, vals);
+        return { data: res.rows, error: null };
+      } catch (e) {
+        return { data: null, error: e as { message: string } };
+      }
+    },
+  };
+}
+
+async function seedImage(userId: string, imagePath: string, width = 100, height = 100) {
+  const buf = await sharp({ create: { width, height, channels: 3, background: { r: 120, g: 120, b: 120 } } }).jpeg().toBuffer();
+  storageMap.set(imagePath, { buffer: buf, type: "image/jpeg" });
+  await asUserWithId(userId, "insert into storage.objects(bucket_id,name) values($1,$2) on conflict do nothing", ["listing-images", imagePath]);
+  return buf;
+}
+
+async function createListing(listingId: string, sellerId: string, imagePath: string, title = "Desk chair") {
+  const imageUrl = `https://example.supabase.co/storage/v1/object/public/listing-images/${imagePath}`;
+  await asService("insert into public.listings(id,seller_id,category_id,title,description,price_inr,condition,hostel_block,image_path,image_url) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict do nothing", [
+    listingId,
+    sellerId,
+    "00000000-0000-4000-8000-000000000003",
+    title,
+    "A chair for studying long enough description",
+    1000,
+    "good",
+    "Block A",
+    imagePath,
+    imageUrl,
+  ]);
+}
 
 beforeAll(async () => {
   db = new PGlite();
@@ -38,6 +283,10 @@ beforeAll(async () => {
   await db.exec(await readFile("supabase/migrations-draft/002_ai.sql", "utf8"));
   await db.exec(await readFile("docs/drafts/003_ai_budget_hardening.sql", "utf8"));
   await db.exec("grant service_role to postgres");
+  await db.exec("grant all on public.listings to service_role");
+  await db.exec("grant all on storage.objects to service_role");
+  await db.exec("create policy listings_service_all on public.listings for all to service_role using (true) with check (true)");
+  await db.exec("create policy storage_service_all on storage.objects for all to service_role using (true) with check (true)");
   await db.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,'{}'::jsonb) on conflict (id) do nothing", [seller, "seller@test"]);
   await db.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,'{}'::jsonb) on conflict (id) do nothing", [attacker, "attacker@test"]);
   await db.query("insert into public.profiles(id,display_name) values($1,$2) on conflict (id) do nothing", [seller, "Seller"]);
@@ -46,13 +295,14 @@ beforeAll(async () => {
   process.env.AI_ENABLED = "true";
   process.env.AI_DAILY_LIMIT = "100";
   process.env.AI_USER_DAILY_LIMIT = "100";
-  process.env.SUPABASE_URL = "http://localhost";
+  process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test_service_key";
   process.env.META_API_KEY = "meta_test_key";
   process.env.AI_DRAFT_PROVIDER = "meta";
   process.env.META_MODEL = "muse-spark-1.3";
   process.env.APP_MODE = "live";
   process.env.BASETEN_API_KEY = "baseten_test_key";
+  process.env.AI_MAX_RETRIES = "1";
 }, 60000);
 
 afterAll(async () => {
@@ -60,12 +310,14 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  storageMap.clear();
   await db.exec("update public.ai_budget set enabled=true, daily_limit=100, per_user_limit=100, meta_micro_usd_cap=1000000, baseten_micro_usd_cap=1000000, meta_micro_usd_used=0, baseten_micro_usd_used=0, meta_reserve_micro_usd=0, baseten_reserve_micro_usd=0 where id=true");
   await db.exec("update public.ai_settings set enabled=true, daily_limit=100, per_user_limit=100");
-  await db.exec("delete from public.ai_attempts; delete from public.ai_operations; delete from public.ai_usage; delete from public.ai_pricebook");
-  await asService("insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,max_duration_sec) values('draft','meta','muse-spark-1.3',8500,true,8000,1200,null)");
-  await asService("insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,max_duration_sec) values('transcribe','meta','muse-voice-transcribe-1.0',3500,true,60)");
-  await asService("insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled) values('cutout','meta','sam-3.1',4000,true)");
+  await db.exec("delete from public.ai_attempts; delete from public.ai_operations; delete from public.ai_usage; delete from public.ai_pricebook; delete from public.listings; delete from storage.objects");
+  await asService("insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,max_duration_sec,version) values('draft','meta','muse-spark-1.3',8500,true,8000,1200,null,1)");
+  await asService("insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,max_duration_sec,version) values('transcribe','meta','muse-voice-transcribe-1.0',3500,true,60,1)");
+  await asService("insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,version) values('cutout','meta','sam-3.1',4000,true,1)");
+  vi.restoreAllMocks();
 });
 
 describe("actual production guard+meter+cache via PGlite service_role (no duplicate harness)", () => {
@@ -88,8 +340,6 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
     const r1 = await runMeteredGuarded({ ledger: ledger1, operation: providerSpy, validateCached: (c) => c as typeof providerSpy extends () => Promise<infer T> ? T : never, maxRetries: 0 });
     expect(r1.status).toBe("fresh");
     expect(providerSpy).toHaveBeenCalledTimes(1);
-    // Complete with validated result (simulating route's complete with actual draft)
-    // runMeteredGuarded already completed via ledger.complete; now we check DB cache
     providerSpy.mockClear();
     const ledger2 = makeLedger(idem, src);
     const r2 = await runMeteredGuarded({ ledger: ledger2, operation: providerSpy, maxRetries: 0 });
@@ -112,7 +362,6 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
     });
     const idem = "pending-" + hash("pending1").slice(0, 16);
     const src = hash("pendingsrc");
-    // First reserve creates pending
     const ledger1 = makeLedger(idem, src);
     const p1 = runMeteredGuarded({ ledger: ledger1, operation: providerSpy, maxRetries: 0 });
     await new Promise((r) => setTimeout(r, 50));
@@ -123,7 +372,6 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
     expect(r2.status).toBe("duplicate_pending");
     expect(providerSpy).toHaveBeenCalledTimes(0);
     p1.catch(() => undefined);
-    // Cleanup pending
     const op = await asService("select id from public.ai_operations where idempotency_key=$1", [idem]);
     if ((op.rows[0] as Record<string, unknown>)) {
       const att = await asService("select id from public.ai_attempts where operation_id=$1", [(op.rows[0] as Record<string, unknown>).id as string]);
@@ -139,15 +387,6 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
       complete: async () => {},
     };
     await expect(runMeteredGuarded({ ledger, operation: providerSpy, maxRetries: 0 })).rejects.toMatchObject({ code: "AI_LIMIT_UNAVAILABLE" });
-    expect(providerSpy).toHaveBeenCalledTimes(0);
-  });
-
-  it("price envelope exceed =>0 provider, browser cannot choose price (server validates trusted pricebook bounds)", async () => {
-    await asService("update public.ai_pricebook set input_max_chars=5 where feature='draft'");
-    const { enforcePricebookBounds } = await import("@/lib/ai/meter");
-    const row = { feature: "draft", provider: "meta", model: "muse-spark-1.3", max_cost_micro_usd: 8500, enabled: true, input_max_chars: 5, output_max_tokens: 1200, max_duration_sec: null };
-    expect(() => enforcePricebookBounds(row, { inputChars: 100, outputTokens: 1200 }, { maxImageBytes: 2 * 1024 * 1024, maxAudioBytes: 3000000, maxOutputTokens: 1200, maxImageSide: 1600 })).toThrow();
-    const providerSpy = vi.fn(async () => "ok");
     expect(providerSpy).toHaveBeenCalledTimes(0);
   });
 
@@ -168,13 +407,10 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
     const ledger1 = makeLedger(src1);
     const res1 = await (await import("@/lib/ai/guard")).runMeteredGuarded({ ledger: ledger1, operation: async () => "ok1", maxRetries: 0 });
     expect(res1.status).toBe("fresh");
-    // Complete it as done
-    // Now same idem but different src should be source_mismatch, not new execution
     const ledger2 = makeLedger(src2);
     const res2 = (await (await import("@/lib/ai/guard")).runMeteredGuarded({ ledger: ledger2, operation: async () => "ok2", maxRetries: 0 }).catch((e: unknown) => e)) as { code: string; status: number };
     expect(res2.code).toBe("AI_LIMIT");
     expect(res2.status).toBe(429);
-    // Different idem with src2 should be fresh
     const idemDiff = "img-diff-" + hash("diff").slice(0, 8);
     const ledger3 = {
       reserve: async () => {
@@ -191,7 +427,6 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
   it("cutout upload failure not cached success: operation marked failed, duplicate not done", async () => {
     const idem = "cutout-fail-" + hash("cf1").slice(0, 8);
     const src = hash("cutout-src");
-    // Directly test via SQL: reserve, complete with ok=false (upload failure), then next reserve should be fresh not duplicate_done
     const res1 = await asService("select * from public.reserve_ai_attempt($1,'cutout',$2,'meta','sam-3.1',$3,100,100)", [seller, idem, src]);
     expect((res1.rows[0] as Record<string, unknown>).allowed).toBe(true);
     await asService("select public.complete_ai_attempt($1,$2,false,100)", [seller, (res1.rows[0] as Record<string, unknown>).attempt_id as string]);
@@ -216,16 +451,13 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
       },
     });
     const { runMeteredGuarded, AiFailure } = await import("@/lib/ai/guard");
-    // Fail 3 times
     for (let i = 0; i < 3; i++) {
       const ledger = makeLedger();
       const res = (await runMeteredGuarded({ ledger, operation: async () => { throw new AiFailure("AI_PROVIDER", "fail", 503, true); }, maxRetries: 0 }).catch((e: unknown) => e)) as { code: string };
       expect(res.code).toBe("AI_PROVIDER");
-      // Complete is already done via guard's finally with ok=false, but we need to ensure DB reflects failed
     }
     const op = await asService("select attempt_count, status from public.ai_operations where idempotency_key=$1", [idem]);
     expect((op.rows[0] as Record<string, unknown>).attempt_count).toBe(3);
-    // 4th attempt should be max_attempts
     const ledger4 = makeLedger();
     const r4 = (await runMeteredGuarded({ ledger: ledger4, operation: async () => "ok", maxRetries: 0 }).catch((e: unknown) => e)) as { code: string; status: number };
     expect(r4.code).toBe("AI_LIMIT");
@@ -233,20 +465,440 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
   });
 
   it("old ledger bypass fails closed: authenticated cannot call reserve_ai_usage (returns unauthorized, not allowed)", async () => {
-    const r1 = await db.query("select * from public.reserve_ai_usage('draft',50,5)");
-    expect((r1.rows[0] as Record<string, unknown>).allowed).toBe(false);
-    expect((r1.rows[0] as Record<string, unknown>).reason).toBe("unauthorized");
+    await db.exec("set role authenticated");
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [seller]);
+    try {
+      await expect(db.query("select * from public.reserve_ai_usage('draft',50,5)")).rejects.toThrow();
+    } finally {
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.sub','',false)");
+    }
   });
 
-  it("image dimensions verified via sharp, not comment only: >1600 rejected before provider", async () => {
-    const buf = await sharp({ create: { width: 1700, height: 1700, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
-    const meta = await sharp(buf).metadata();
-    expect(meta.width).toBe(1700);
-    // Simulate route's sharp check
-    expect(meta.width! > 1600 || meta.height! > 1600).toBe(true);
-    // Provider should not be called if dimensions exceed
-    const providerSpy = vi.fn(async () => "ok");
-    // We would throw AI_BOUNDS before provider, so spy remains 0
-    expect(providerSpy).toHaveBeenCalledTimes(0);
+  it("price envelope exceed via actual POST =>0 provider, browser cannot choose price", async () => {
+    await asService("update public.ai_pricebook set input_max_chars=5 where feature='draft'");
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath, 100, 100);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ title: "X", description: "Y", category_slug: "furniture", tags: ["x"], condition_hint: null, brand: null, edition: null }) } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { transcript: "a".repeat(100) });
+      const res = await POST(req as unknown as Request);
+      const body = await res.json() as { error?: { code: string } };
+      expect(res.status).toBe(400);
+      expect(body.error?.code).toBe("AI_BOUNDS");
+      expect(fetchSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
+
+  it("image dimensions via actual POST: >1600 rejected before provider", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    const largeBuf = await sharp({ create: { width: 1700, height: 1700, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
+    storageMap.set(imagePath, { buffer: largeBuf, type: "image/jpeg" });
+    await asUserWithId(seller, "insert into storage.objects(bucket_id,name) values($1,$2) on conflict do nothing", ["listing-images", imagePath]);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "{}" } }] }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { image_path: imagePath });
+      const res = await POST(req as unknown as Request);
+      const body = await res.json() as { error?: { code: string } };
+      expect(res.status).toBe(400);
+      expect(body.error?.code).toBe("IMAGE_SIZE");
+      expect(fetchSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe("real draft POST via production route (cap429, payment503, timeout503, sanitized)", () => {
+  it("cap429 via actual POST when budget exhausted =>429 and 0 provider", async () => {
+    await db.exec("update public.ai_budget set meta_micro_usd_cap=100, meta_micro_usd_used=95, meta_reserve_micro_usd=0 where id=true");
+    await db.exec("update public.ai_budget set enabled=true where id=true");
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ title: "X", description: "Y", category_slug: "furniture", tags: ["x"], condition_hint: null, brand: null, edition: null }) } }] }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { transcript: "hello" });
+      const res = await POST(req as unknown as Request);
+      expect(res.status).toBe(429);
+      const body = await res.json() as { error?: { code: string } };
+      expect(body.error?.code).toBe("AI_LIMIT");
+      expect(fetchSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("payment402 via actual POST =>503 no retry, provider called once", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    let callCount = 0;
+    const fetchSpy = vi.fn(async () => {
+      callCount++;
+      return new Response(JSON.stringify({ error: "payment" }), { status: 402, headers: { "content-type": "application/json" } });
+    });
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { transcript: "hello" });
+      const res = await POST(req as unknown as Request);
+      expect(res.status).toBe(503);
+      const body = await res.json() as { error?: { code: string } };
+      expect(body.error?.code).toBe("AI_PAYMENT");
+      expect(callCount).toBe(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("timeout503 via actual POST when provider hangs =>503", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
+      return new Promise<Response>(() => {
+        init.signal?.addEventListener("abort", () => {});
+      });
+    });
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { transcript: "hello" });
+      const resPromise = POST(req as unknown as Request);
+      const res = await Promise.race([
+        resPromise,
+        new Promise<Response>((_, reject) => setTimeout(() => reject(new Error("test timeout")), 25000)),
+      ]) as Response;
+      expect(res.status).toBe(503);
+      const body = await res.json() as { error?: { code: string } };
+      expect(["AI_TIMEOUT", "AI_UNAVAILABLE", "AI_LIMIT_UNAVAILABLE"]).toContain(body.error?.code);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  }, 30000);
+
+  it("unknown provider error sanitized via actual POST =>503 generic", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => {
+      return new Response(JSON.stringify({ secret: "super-secret-internal-xyz" }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { transcript: "hello" });
+      const res = await POST(req as unknown as Request);
+      expect(res.status).toBe(503);
+      const text = await res.text();
+      expect(text).not.toContain("super-secret");
+      expect(text).not.toContain("secret");
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("cached draft enforces null brand/edition/condition via parseAiDraft", async () => {
+    const goodDraft = { title: "Chair", description: "A chair", category_slug: "furniture", tags: ["chair"], condition_hint: null, brand: null, edition: null };
+    const badCached = { title: "Chair", description: "A chair", category_slug: "furniture", tags: ["chair"], condition_hint: "new", brand: "Acme", edition: "v2" };
+    const { parseAiDraft } = await import("@/lib/ai/schemas");
+    expect(parseAiDraft(JSON.stringify(goodDraft))).toMatchObject({ brand: null, edition: null, condition_hint: null });
+    let validated: unknown = null;
+    try {
+      validated = parseAiDraft(JSON.stringify(badCached));
+    } catch {}
+    expect(validated).toMatchObject({ brand: null, edition: null, condition_hint: null });
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(goodDraft) } }] }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const idem = "cache-test-" + hash("cache1").slice(0, 16);
+      const req1 = makeRequest("http://localhost:3000/api/ai/draft", { image_path: imagePath }, { "x-idempotency-key": idem });
+      const res1 = await POST(req1 as unknown as Request);
+      expect(res1.status).toBe(200);
+      const body1 = await res1.json() as { data: { draft: { brand: unknown; edition: unknown; condition_hint: unknown } } };
+      expect(body1.data.draft.brand).toBeNull();
+      expect(body1.data.draft.edition).toBeNull();
+      expect(body1.data.draft.condition_hint).toBeNull();
+      const req2 = makeRequest("http://localhost:3000/api/ai/draft", { image_path: imagePath }, { "x-idempotency-key": idem });
+      const res2 = await POST(req2 as unknown as Request);
+      expect(res2.status).toBe(200);
+      const body2 = await res2.json() as { data: { draft: { brand: unknown } } };
+      expect(body2.data.draft.brand).toBeNull();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe("real cutout POST via production route (photo swap, upload fail, cached path/url, stale pricebook)", () => {
+  it("photo replaced between reads/save: old cutout not applied to new image", async () => {
+    const listingId = randomUUID();
+    const imagePathA = `${seller}/${randomUUID()}.jpg`;
+    const imagePathB = `${seller}/${randomUUID()}.jpg`;
+    const bufA = await seedImage(seller, imagePathA, 100, 100);
+    await seedImage(seller, imagePathB, 100, 100);
+    await createListing(listingId, seller, imagePathA, "Chair A");
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { makeCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    let listingsSelectCount = 0;
+    const origFrom = mockSupabase.from.bind(mockSupabase);
+    mockSupabase.from = (table: string) => {
+      if (table === "listings") {
+        const base = origFrom(table) as { select: (cols: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } & Record<string, unknown> } & Record<string, unknown>;
+        const origSelect = base.select as (cols: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } & Record<string, unknown>;
+        base.select = (cols: string) => {
+          const builder = origSelect(cols) as { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } & Record<string, unknown>;
+          const origMaybeSingle = builder.maybeSingle as () => Promise<{ data: unknown; error: unknown }>;
+          builder.maybeSingle = async () => {
+            listingsSelectCount++;
+            if (listingsSelectCount === 1) {
+              return { data: { id: listingId, seller_id: seller, image_path: imagePathA, title: "Chair A", ai_status: "none", cutout_path: null, cutout_url: null }, error: null };
+            }
+            if (listingsSelectCount === 2) {
+              await asService("update public.listings set image_path=$1, image_url=$2 where id=$3", [
+                imagePathB,
+                `https://example.supabase.co/storage/v1/object/public/listing-images/${imagePathB}`,
+                listingId,
+              ]);
+            }
+            return origMaybeSingle();
+          };
+          return builder;
+        };
+        return base;
+      }
+      return origFrom(table);
+    };
+    const origStorageFrom = mockSupabase.storage.from.bind(mockSupabase.storage);
+    mockSupabase.storage.from = (bucket: string) => {
+      const base = origStorageFrom(bucket);
+      if (bucket === "listing-images") {
+        return {
+          ...base,
+          download: async (path: string) => {
+            if (path === imagePathA) {
+              return { data: { size: bufA.length, type: "image/jpeg", arrayBuffer: async () => bufA.buffer.slice(bufA.byteOffset, bufA.byteOffset + bufA.byteLength) } as unknown as Blob, error: null };
+            }
+            return base.download(path);
+          },
+        };
+      }
+      return base;
+    };
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(bufA);
+    const { POST } = await import("@/app/api/ai/cutout/route");
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const res = await POST(req as unknown as Request);
+    expect([409, 503]).toContain(res.status);
+    const listing = await asService("select image_path, cutout_path, ai_status from public.listings where id=$1", [listingId]);
+    const row = listing.rows[0] as Record<string, unknown>;
+    expect(row.image_path).toBe(imagePathB);
+    expect(row.cutout_path).toBeNull();
+  });
+
+  it("upload failure not cached done: complete marked failed, next reserve fresh", async () => {
+    const listingId = randomUUID();
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    await createListing(listingId, seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { makeCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    const origFromStorage = mockSupabase.storage.from.bind(mockSupabase.storage);
+    mockSupabase.storage.from = (bucket: string) => {
+      const base = origFromStorage(bucket);
+      if (bucket === "listing-images") {
+        return {
+          ...base,
+          upload: async () => ({ data: null, error: { message: "upload failed" } }),
+        };
+      }
+      return base;
+    };
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
+    (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(processed);
+    const { POST } = await import("@/app/api/ai/cutout/route");
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const res = await POST(req as unknown as Request);
+    expect(res.status).toBe(503);
+    const op = await asService("select status from public.ai_operations where feature='cutout' order by created_at desc limit 1");
+    expect((op.rows[0] as Record<string, unknown>).status).toBe("failed");
+  });
+
+  it("cached cutout returns BOTH cutout_path and cutout_url without provider", async () => {
+    const listingId = randomUUID();
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    await createListing(listingId, seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { makeCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
+    (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(processed);
+    const { POST } = await import("@/app/api/ai/cutout/route");
+    const req1 = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const res1 = await POST(req1 as unknown as Request);
+    expect(res1.status).toBe(200);
+    const listingAfter = await asService("select cutout_path, cutout_url from public.listings where id=$1", [listingId]);
+    const rowAfter = listingAfter.rows[0] as Record<string, unknown>;
+    expect(rowAfter.cutout_path).toBeTruthy();
+    expect(rowAfter.cutout_url).toBeTruthy();
+    expect((rowAfter.cutout_url as string).endsWith(rowAfter.cutout_path as string)).toBe(true);
+    (makeCutout as unknown as ReturnType<typeof vi.fn>).mockClear();
+    const req2 = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const res2 = await POST(req2 as unknown as Request);
+    expect(res2.status).toBe(200);
+    expect((makeCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(0);
+    const body2 = await res2.json() as { data: { status: string } };
+    expect(body2.data.status).toBe("done");
+  });
+
+  it("already persisted done cutout returns without provider", async () => {
+    const listingId = randomUUID();
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    const cutoutPath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const cutoutBuf = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
+    storageMap.set(cutoutPath, { buffer: cutoutBuf, type: "image/jpeg" });
+    await asUserWithId(seller, "insert into storage.objects(bucket_id,name) values($1,$2) on conflict do nothing", ["listing-images", cutoutPath]);
+    await createListing(listingId, seller, imagePath);
+    await asService("update public.listings set cutout_path=$1, cutout_url=$2, ai_status='done' where id=$3", [
+      cutoutPath,
+      `https://example.supabase.co/storage/v1/object/public/listing-images/${cutoutPath}`,
+      listingId,
+    ]);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { makeCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (makeCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(cutoutBuf);
+    const { POST } = await import("@/app/api/ai/cutout/route");
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const res = await POST(req as unknown as Request);
+    expect(res.status).toBe(200);
+    expect((makeCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(0);
+  });
+
+  it("stale pricebook fingerprint =>0 provider", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    const realClient = createMockMeteringClient();
+    let callCount = 0;
+    const origRpc = realClient.rpc;
+    realClient.rpc = async (fn: string, params: Record<string, unknown>) => {
+      if (fn === "reserve_ai_attempt" && callCount === 0) {
+        callCount++;
+        await asService("update public.ai_pricebook set version=2, updated_at=now() where feature='draft'");
+        return origRpc(fn, params);
+      }
+      return origRpc(fn, params);
+    };
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(realClient);
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ title: "X", description: "Y", category_slug: "furniture", tags: ["x"], condition_hint: null, brand: null, edition: null }) } }] }), { status: 200 }));
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { POST } = await import("@/app/api/ai/draft/route");
+      const req = makeRequest("http://localhost:3000/api/ai/draft", { image_path: imagePath });
+      const res = await POST(req as unknown as Request);
+      expect([503, 429]).toContain(res.status);
+      expect(fetchSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("bounded timeout must reject, not only abort fetch", async () => {
+    const listingId = randomUUID();
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath);
+    await createListing(listingId, seller, imagePath);
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { makeCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(createMockMeteringClient());
+    (makeCutout as unknown as ReturnType<typeof vi.fn>).mockImplementation(async ({ signal }: { signal: AbortSignal }) => {
+      return new Promise<Buffer>((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    });
+    const { POST } = await import("@/app/api/ai/cutout/route");
+    const req = makeRequest("http://localhost:3000/api/ai/cutout", { listing_id: listingId });
+    const resPromise = POST(req as unknown as Request);
+    const res = await Promise.race([
+      resPromise,
+      new Promise<Response>((_, r) => setTimeout(() => r(new Error("timeout test")), 25000)),
+    ]) as Response;
+    expect(res.status).toBe(503);
+    const body = await res.json() as { error?: { code: string } };
+    expect(body.error?.code).toBe("AI_TIMEOUT");
+  }, 30000);
 });

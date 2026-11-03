@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/server/auth";
 import { ApiProblem } from "@/lib/server/http";
 import { AiFailure, runMeteredGuarded, type MeteredLedger } from "./guard";
 import { getDraftProvider, getFeatureProviderModel } from "@/lib/server/env";
-import { createMeteringClient, meterReserve, meterComplete, hashSource, fetchPricebookRow, enforcePricebookBounds } from "./meter";
+import { createMeteringClient, meterReserve, meterComplete, hashSource, fetchPricebookRow, enforcePricebookBounds, pricebookFingerprint } from "./meter";
 import { PROVIDER_LIMITS } from "./provider";
 
 /**
@@ -58,6 +58,9 @@ export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?:
     throw new ApiProblem(503, "AI_UNAVAILABLE", "AI assistance is unavailable. You can continue manually.");
   }
 
+  const expectedVersion = pricebookRow.version ?? 1;
+  const expectedFingerprint = pricebookFingerprint(pricebookRow);
+
   const ledger: MeteredLedger = {
     async reserve() {
       try {
@@ -72,6 +75,8 @@ export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?:
           dailyLimit: daily,
           userLimit,
           listingId: opts?.listingId ?? null,
+          expectedVersion,
+          expectedFingerprint,
         });
         return res;
       } catch (e) {
@@ -104,27 +109,33 @@ export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?:
 }
 
 export async function runAi<T>(ledger: MeteredLedger, operation: (signal: AbortSignal, attempt: number) => Promise<T>, opts?: { maxRetries?: number; validateCached?: (cached: unknown) => T | null }): Promise<T> {
-  // Unified typed flow: fresh vs cached vs pending; cached validated per feature; no exception-as-HTTP200
-  const guarded = await runMeteredGuarded<T>({
-    ledger,
-    operation,
-    validateCached: opts?.validateCached,
-    maxRetries: opts?.maxRetries ?? 1,
-  });
-  if (guarded.status === "duplicate_done") {
-    // Validate cached JSON per feature before returning; malformed rejects
-    const cached = guarded.cached;
-    if (opts?.validateCached) {
-      const validated = opts.validateCached(cached);
-      if (validated === null || validated === undefined) throw new ApiProblem(503, "AI_UNAVAILABLE", "AI assistance is unavailable. You can continue manually.");
-      return validated;
+  try {
+    const guarded = await runMeteredGuarded<T>({
+      ledger,
+      operation,
+      validateCached: opts?.validateCached,
+      maxRetries: opts?.maxRetries ?? 1,
+    });
+    if (guarded.status === "duplicate_done") {
+      const cached = guarded.cached;
+      if (opts?.validateCached) {
+        const validated = opts.validateCached(cached);
+        if (validated === null || validated === undefined) throw new ApiProblem(503, "AI_UNAVAILABLE", "AI assistance is unavailable. You can continue manually.");
+        return validated;
+      }
+      return cached as T;
     }
-    return cached as T;
+    if (guarded.status === "duplicate_pending") {
+      throw new ApiProblem(409, "AI_PENDING", "Duplicate request already pending. Try again shortly.");
+    }
+    return guarded.value;
+  } catch (e) {
+    if (e instanceof ApiProblem) throw e;
+    if (e instanceof AiFailure) {
+      throw new ApiProblem(e.status, e.code, e.message);
+    }
+    throw e;
   }
-  if (guarded.status === "duplicate_pending") {
-    throw new ApiProblem(409, "AI_PENDING", "Duplicate request already pending. Try again shortly.");
-  }
-  return guarded.value;
 }
 
 // Helper to enforce trusted server-validated usage dimensions before provider

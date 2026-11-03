@@ -65,11 +65,18 @@ export type ReserveMeterArgs = {
   dailyLimit: number;
   userLimit: number;
   listingId?: string | null;
+  expectedVersion?: number | null;
+  expectedFingerprint?: string | null;
 };
+
+export function pricebookFingerprint(row: PricebookRow): string {
+  const payload = [row.feature, row.provider, row.model, String(row.max_cost_micro_usd), row.input_max_chars?.toString() ?? "", row.output_max_tokens?.toString() ?? "", row.max_duration_sec?.toString() ?? "", String(row.enabled), String(row.version ?? 1)].join("|");
+  return createHash("md5").update(payload).digest("hex");
+}
 
 export async function meterReserve(args: ReserveMeterArgs): Promise<MeterReserveResult> {
   if (!args.client) throw new Error("AI_METERING_UNAVAILABLE");
-  const params = {
+  const params: Record<string, unknown> = {
     p_user_id: args.userId,
     p_feature: args.feature,
     p_idempotency_key: args.idempotencyKey,
@@ -80,6 +87,8 @@ export async function meterReserve(args: ReserveMeterArgs): Promise<MeterReserve
     p_user_limit: args.userLimit,
     p_listing_id: args.listingId ?? null,
   };
+  if (args.expectedVersion !== undefined && args.expectedVersion !== null) params.p_expected_version = args.expectedVersion;
+  if (args.expectedFingerprint !== undefined && args.expectedFingerprint !== null) params.p_expected_fingerprint = args.expectedFingerprint;
   const raw = await withTimeout(
     (args.client.rpc as unknown as (fn: string, p: unknown) => Promise<{ data: unknown; error: unknown }>)("reserve_ai_attempt", params),
     RESERVE_TIMEOUT_MS,
@@ -142,22 +151,23 @@ export async function meterComplete(args: {
   await bounded.catch(() => undefined);
 }
 
-// Trusted pricebook enforcement: server-validated dimensions vs pricebook bounds
 export const pricebookRowSchema = z.object({
   feature: z.string(),
   provider: z.string(),
   model: z.string(),
-  max_cost_micro_usd: z.number().int().positive(),
+  max_cost_micro_usd: z.coerce.number().int().positive(),
   enabled: z.boolean(),
-  input_max_chars: z.number().int().positive().nullable(),
-  output_max_tokens: z.number().int().positive().nullable(),
-  max_duration_sec: z.number().int().positive().nullable(),
+  input_max_chars: z.coerce.number().int().positive().nullable(),
+  output_max_tokens: z.coerce.number().int().positive().nullable(),
+  max_duration_sec: z.coerce.number().int().positive().nullable(),
+  version: z.coerce.number().int().positive().nullable().optional(),
+  updated_at: z.union([z.string(), z.date()]).nullable().optional(),
 });
 export type PricebookRow = z.infer<typeof pricebookRowSchema>;
 
 export async function fetchPricebookRow(client: NonNullable<ReturnType<typeof createMeteringClient>>, feature: AiFeature): Promise<PricebookRow | null> {
   const { data, error } = await (client.from as unknown as (t: string) => { select: (s: string) => { eq: (c: string, v: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> } } })("ai_pricebook")
-    .select("feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,max_duration_sec")
+    .select("feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,max_duration_sec,version,updated_at")
     .eq("feature", feature)
     .maybeSingle();
   if (error) throw new Error("AI_METERING_UNAVAILABLE:" + String(error));

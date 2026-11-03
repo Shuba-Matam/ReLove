@@ -117,8 +117,8 @@ describe("monetary limits: NULL/missing/nonpositive cap and reserve per-provider
     // transcribe: 60s @ $0.18/3600=3000 microUSD => fixture 3500 rounded TEST ONLY
     await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,max_duration_sec) values('draft','meta','muse-spark-1.3',8500,true,8000,1200,null)");
     await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,max_duration_sec) values('transcribe','meta','muse-voice-transcribe-1.0',3500,true,60)");
-    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled) values('cutout','meta','sam-3.1',4000,true)");
-    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled) values('moderation','baseten','meta-models/muse-spark-open-1026',6000,true)");
+    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,version) values('cutout','meta','sam-3.1',4000,true,1)");
+    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,version) values('moderation','baseten','meta-models/muse-spark-open-1026',6000,true,1)");
   });
 
   it("NULL/missing/nonpositive provider cap MUST reject even if global enabled and pricebook enabled", async () => {
@@ -137,7 +137,7 @@ describe("monetary limits: NULL/missing/nonpositive cap and reserve per-provider
     const r1 = (await asService(seller, "select * from public.reserve_ai_attempt($1,'cutout','key-unpriced-12345','meta','sam-3.1',$2,50,5)", [seller, hash("cutout1")])).rows[0] as Record<string, unknown>;
     expect(r1.allowed).toBe(false); expect(r1.reason).toBe("unpriced_feature");
     // restore
-    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled) values('cutout','meta','sam-3.1',4000,true)");
+    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,version) values('cutout','meta','sam-3.1',4000,true,1)");
     // provider mismatch: request baseten but pricebook is meta
     const r2 = (await asService(seller, "select * from public.reserve_ai_attempt($1,'draft','key-prov-mismatch1','baseten','meta-models/muse-spark-open-1026',$2,50,5)", [seller, hash("draft-mismatch")])).rows[0] as Record<string, unknown>;
     expect(r2.allowed).toBe(false); expect(r2.reason).toBe("provider_mismatch");
@@ -196,7 +196,7 @@ describe("operation identity, idempotency, duplicate, max3, source mismatch", ()
     await db.exec("update public.ai_settings set enabled=true, daily_limit=100, per_user_limit=100");
     await db.exec("delete from public.ai_attempts; delete from public.ai_operations; delete from public.ai_usage;");
     await db.exec("delete from public.ai_pricebook");
-    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled) values('draft','meta','muse-spark-1.3',8500,true)");
+    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,version) values('draft','meta','muse-spark-1.3',8500,true,8000,1200,1)");
   });
 
   it("duplicate done/pending returns explicit nonexecution disposition, not allowed=true, no second provider execution", async () => {
@@ -288,7 +288,7 @@ describe("money/audit not client-writable, service_role only", () => {
     await db.exec("update public.ai_budget set enabled=true, daily_limit=100, per_user_limit=100, meta_micro_usd_cap=1000000, baseten_micro_usd_cap=1000000, meta_micro_usd_used=0, baseten_micro_usd_used=0, meta_reserve_micro_usd=0, baseten_reserve_micro_usd=0 where id=true");
     await db.exec("update public.ai_settings set enabled=true where feature in ('draft','transcribe','cutout','moderation')");
     await db.exec("delete from public.ai_attempts; delete from public.ai_operations; delete from public.ai_usage; delete from public.ai_pricebook");
-    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled) values('draft','meta','muse-spark-1.3',8500,true)");
+    await asService(seller, "insert into public.ai_pricebook(feature,provider,model,max_cost_micro_usd,enabled,input_max_chars,output_max_tokens,version) values('draft','meta','muse-spark-1.3',8500,true,8000,1200,1)");
   });
   it("revokes reserve/complete from public/anon/authenticated, only service_role can execute", async () => {
     const key = "revoke-test-" + hash("revoke").slice(0, 12);

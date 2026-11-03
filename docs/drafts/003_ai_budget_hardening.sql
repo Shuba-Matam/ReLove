@@ -33,10 +33,16 @@ create table if not exists public.ai_pricebook (
   model text not null check (char_length(model) between 1 and 120),
   max_cost_micro_usd integer not null check (max_cost_micro_usd > 0 and max_cost_micro_usd <= 1000000),
   enabled boolean not null default false,
-  -- bounds documenting the cap; informational, but used to validate provider contract
   input_max_chars integer check (input_max_chars is null or input_max_chars > 0),
   output_max_tokens integer check (output_max_tokens is null or output_max_tokens > 0),
-  max_duration_sec integer check (max_duration_sec is null or (max_duration_sec between 1 and 600))
+  max_duration_sec integer check (max_duration_sec is null or (max_duration_sec between 1 and 600)),
+  version bigint not null default 1 check (version > 0),
+  updated_at timestamptz not null default now(),
+  check (enabled = false or (
+    (feature = 'draft' and input_max_chars is not null and output_max_tokens is not null) or
+    (feature = 'transcribe' and max_duration_sec is not null) or
+    feature in ('cutout','moderation')
+  ))
 );
 comment on table public.ai_pricebook is 'Server-held pricebook; unknown/unpriced disabled rejects; client cannot forge cost; empty until owner-configured';
 
@@ -143,7 +149,9 @@ create or replace function public.reserve_ai_attempt(
   p_source_hash text,
   p_daily_limit integer,
   p_user_limit integer,
-  p_listing_id uuid default null
+  p_listing_id uuid,
+  p_expected_version bigint,
+  p_expected_fingerprint text
 ) returns table(operation_id uuid, attempt_id uuid, allowed boolean, disposition text, reason text, cached_result jsonb)
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -204,6 +212,18 @@ begin
     return query select null::uuid,null::uuid,false,'rejected'::text,'unpriced_feature'::text,null::jsonb; return; end if;
   if pb.provider <> p_provider or pb.model <> p_model then
     return query select null::uuid,null::uuid,false,'rejected'::text,'provider_mismatch'::text,null::jsonb; return; end if;
+  if p_expected_version is not null and pb.version <> p_expected_version then
+    return query select null::uuid,null::uuid,false,'rejected'::text,'pricebook_stale'::text,null::jsonb; return; end if;
+  if p_expected_fingerprint is not null then
+    if md5(pb.feature||'|'||pb.provider||'|'||pb.model||'|'||pb.max_cost_micro_usd::text||'|'||coalesce(pb.input_max_chars::text,'')||'|'||coalesce(pb.output_max_tokens::text,'')||'|'||coalesce(pb.max_duration_sec::text,'')||'|'||pb.enabled::text||'|'||pb.version::text) <> p_expected_fingerprint then
+      return query select null::uuid,null::uuid,false,'rejected'::text,'pricebook_stale'::text,null::jsonb; return; end if;
+  end if;
+  if pb.enabled = true then
+    if pb.feature = 'draft' and (pb.input_max_chars is null or pb.output_max_tokens is null) then
+      return query select null::uuid,null::uuid,false,'rejected'::text,'unpriced_feature'::text,null::jsonb; return; end if;
+    if pb.feature = 'transcribe' and pb.max_duration_sec is null then
+      return query select null::uuid,null::uuid,false,'rejected'::text,'unpriced_feature'::text,null::jsonb; return; end if;
+  end if;
 
   -- idempotency lookup immediately after core checks: duplicate respected even after spend limit, but disabled kill switch still stops (disabled already checked above)
   select * into existing_op from public.ai_operations
@@ -300,8 +320,31 @@ begin
 
   return query select new_op_id, new_attempt, true, 'executed'::text, null::text, null::jsonb;
 end; $$;
+
+create or replace function public.reserve_ai_attempt(p_user_id uuid, p_feature text, p_idempotency_key text, p_provider text, p_model text, p_source_hash text, p_daily_limit integer, p_user_limit integer)
+returns table(operation_id uuid, attempt_id uuid, allowed boolean, disposition text, reason text, cached_result jsonb)
+language sql security definer set search_path = '' as $$
+  select * from public.reserve_ai_attempt(p_user_id, p_feature, p_idempotency_key, p_provider, p_model, p_source_hash, p_daily_limit, p_user_limit, null::uuid, null::bigint, null::text);
+$$;
+create or replace function public.reserve_ai_attempt(p_user_id uuid, p_feature text, p_idempotency_key text, p_provider text, p_model text, p_source_hash text, p_daily_limit integer, p_user_limit integer, p_listing_id uuid)
+returns table(operation_id uuid, attempt_id uuid, allowed boolean, disposition text, reason text, cached_result jsonb)
+language sql security definer set search_path = '' as $$
+  select * from public.reserve_ai_attempt(p_user_id, p_feature, p_idempotency_key, p_provider, p_model, p_source_hash, p_daily_limit, p_user_limit, p_listing_id, null::bigint, null::text);
+$$;
+create or replace function public.reserve_ai_attempt(p_user_id uuid, p_feature text, p_idempotency_key text, p_provider text, p_model text, p_source_hash text, p_daily_limit integer, p_user_limit integer, p_listing_id uuid, p_expected_version bigint)
+returns table(operation_id uuid, attempt_id uuid, allowed boolean, disposition text, reason text, cached_result jsonb)
+language sql security definer set search_path = '' as $$
+  select * from public.reserve_ai_attempt(p_user_id, p_feature, p_idempotency_key, p_provider, p_model, p_source_hash, p_daily_limit, p_user_limit, p_listing_id, p_expected_version, null::text);
+$$;
+
+revoke all on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer) from public, anon, authenticated;
 revoke all on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer,uuid) from public, anon, authenticated;
+revoke all on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer,uuid,bigint) from public, anon, authenticated;
+revoke all on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer,uuid,bigint,text) from public, anon, authenticated;
+grant execute on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer) to service_role;
 grant execute on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer,uuid) to service_role;
+grant execute on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer,uuid,bigint) to service_role;
+grant execute on function public.reserve_ai_attempt(uuid,text,text,text,text,text,integer,integer,uuid,bigint,text) to service_role;
 
 -- completion fenced to current attempt claim; fail/timeout counts full max, no refund RPC
 create or replace function public.complete_ai_attempt(
@@ -347,11 +390,11 @@ grant execute on function public.complete_ai_attempt(uuid,uuid,boolean,integer,j
 update public.ai_budget set enabled = false, reserve_micro_usd = 0, meta_reserve_micro_usd = 0, baseten_reserve_micro_usd = 0 where id = true;
 
 -- No default pricebook rows: enabled false by construction; owner must insert verified ceilings.
--- Example owner insert (NOT executed here): insert into ai_pricebook(feature,provider,model,max_cost_micro_usd,input_max_chars,output_max_tokens,max_duration_sec,enabled) values
---   ('draft','meta','muse-spark-1.3', 8500, 8000, 1200, null, true), -- 1200*4.25/1M=5100 output + input buffer, rounded 8500
---   ('transcribe','meta','muse-voice-transcribe-1.0', 3500, 3000, null, 60, true), -- 60s*0.18/3600=3000 + round
---   ('cutout','meta','sam-3.1', 4000, null, null, null, true),
---   ('moderation','baseten','meta-models/muse-spark-open-1026', 6000, 8000, 500, null, true);
+-- Example owner insert (NOT executed here, docs-only): insert into ai_pricebook(feature,provider,model,max_cost_micro_usd,input_max_chars,output_max_tokens,max_duration_sec,enabled,version) values
+--   ('draft','meta','muse-spark-1.3', 8500, 8000, 1200, null, true, 1), -- 1200*4.25/1M=5100 output + input buffer, rounded 8500 TEST ONLY
+--   ('transcribe','meta','muse-voice-transcribe-1.0', 3500, 3000, null, 60, true, 1), -- 60s*0.18/3600=3000 + round TEST ONLY
+--   ('cutout','meta','sam-3.1', 4000, null, null, null, true, 1),
+--   ('moderation','baseten','meta-models/muse-spark-open-1026', 6000, 8000, 500, null, true, 1);
 
 -- Least-privilege notes:
 -- Ordinary app CRUD (listings/threads/messages/profiles) uses anon/authenticated via RLS + column grants; no service_role.

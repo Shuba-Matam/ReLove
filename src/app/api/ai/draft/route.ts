@@ -1,8 +1,9 @@
 import { assertTrustedBounds, requireAiContext, runAi } from "@/lib/ai/context";
-import { draftRequestSchema, DRAFT_PROMPT, parseAiDraft, aiDraftSchema } from "@/lib/ai/schemas";
+import { draftRequestSchema, DRAFT_PROMPT, parseAiDraft } from "@/lib/ai/schemas";
 import { draftCompletion, PROVIDER_LIMITS } from "@/lib/ai/provider";
 import { AiFailure } from "@/lib/ai/guard";
 import { ApiProblem, assertSameOrigin, json, readJson, withApi } from "@/lib/server/http";
+import { getAiMaxRetries } from "@/lib/server/env";
 
 /**
  * POST /api/ai/draft — preserves contract from docs/IMPLEMENTATION-CONTRACT.md:
@@ -21,21 +22,10 @@ export const POST = withApi(async (request: Request) => {
   const body = await readJson(request, draftRequestSchema);
   const idempotencyKey = request.headers.get("x-idempotency-key")?.trim() || null;
 
-  // We need image bytes to bind identity to actual source content+prompt+model/options, not listing_id alone
-  // and to verify actual image dimensions <=1600 via sharp, not comment only
   let imageBytes: Buffer | null = null;
   let imageWidth: number | undefined;
   let imageHeight: number | undefined;
   let imageHash: string | null = null;
-
-  // Pre-fetch context without source to get user/supabase for image download; but we need sourceHash before requireAiContext
-  // So we do a two-phase: first download image if present using a temporary auth check via requireAiContext with dummy source,
-  // but we need to avoid reserving twice. Instead we compute sourceHash from image content after download, then call requireAiContext once.
-  // To avoid double-reserve, we defer requireAiContext until after image fetch using a lightweight user check.
-  // We can fetch image after requireAiContext with placeholder source, but we need to ensure reserve happens only after bounds check.
-  // Simplest: call requireAiContext with provisional sourceHash, download image, compute real hash, then if mismatched, we need to re-derive.
-  // Instead we will do: first get user via a direct auth call without metering, then download, then requireAiContext with real hash.
-  // For minimal change, we use requireUser directly for image fetch, then requireAiContext with real hash.
 
   const { requireUser } = await import("@/lib/server/auth");
   const preCtx = await requireUser();
@@ -92,6 +82,7 @@ export const POST = withApi(async (request: Request) => {
     imageHeight,
   });
 
+  const maxRetries = getAiMaxRetries();
   const draft = await runAi(
     ledger,
     async (signal, attempt) => {
@@ -103,10 +94,13 @@ export const POST = withApi(async (request: Request) => {
       }
     },
     {
-      maxRetries: 1,
+      maxRetries,
       validateCached: (cached) => {
-        const parsed = aiDraftSchema.safeParse(cached);
-        return parsed.success ? parsed.data : null;
+        try {
+          return parseAiDraft(typeof cached === "string" ? cached : JSON.stringify(cached));
+        } catch {
+          return null;
+        }
       },
     }
   );

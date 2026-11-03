@@ -124,3 +124,22 @@ export function getSupabaseStoragePublicBase(): string | null {
   if (!url) return null;
   return `${url.replace(/\/$/, "")}/storage/v1/object/public/listing-images`;
 }
+
+export function getOwnerAllowlist(): string[] {
+  const raw = (process.env.AI_OWNER_ALLOWLIST ?? process.env.TEST_OWNER_ALLOWLIST ?? "").trim();
+  if (!raw) return [];
+  return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+export function isAllowedOwner(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const allowlist = getOwnerAllowlist();
+  if (allowlist.length === 0) return false;
+  return allowlist.includes(email);
+}
+
+export function getAiMaxRetries(): number {
+  const raw = Number(process.env.AI_MAX_RETRIES ?? 1);
+  if (!Number.isFinite(raw)) return 1;
+  return Math.min(2, Math.max(0, Math.round(raw)));
+}
