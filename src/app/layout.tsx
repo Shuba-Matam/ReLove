@@ -35,9 +35,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <PwaRegistration />
             <footer className="mt-8 border-t border-[#021640]/50 px-4 py-6 pb-24 text-center md:mt-10 md:pb-6">
               <p className="text-xs text-[#9AA4B8]">Re-Love · Meet in public and check items before paying.</p>
-              <Link href="/privacy" className="mt-1 inline-block text-xs text-[#82b7ff] underline decoration-[#03245e]/60 underline-offset-4 hover:text-[#93c5fd] hover:decoration-[#93c5fd]">
-                Privacy
-              </Link>
+              <nav aria-label="Footer" className="mt-1 flex items-center justify-center gap-3">
+                <Link
+                  href="/privacy"
+                  className="text-xs text-[#82b7ff] underline decoration-[#03245e]/60 underline-offset-4 hover:text-[#93c5fd] hover:decoration-[#93c5fd]"
+                >
+                  Privacy
+                </Link>
+                <span aria-hidden="true" className="text-[#021640]">
+                  ·
+                </span>
+                <Link
+                  href="/install"
+                  className="text-xs text-[#82b7ff] underline decoration-[#03245e]/60 underline-offset-4 hover:text-[#93c5fd] hover:decoration-[#93c5fd]"
+                >
+                  Install
+                </Link>
+              </nav>
             </footer>
           </NotificationsProvider>
         </SessionProvider>
