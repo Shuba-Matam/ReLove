@@ -5,12 +5,14 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSession } from "@/lib/client/session";
+import { useNotifications } from "@/lib/client/notifications";
 import type { ThreadDetail } from "@/lib/marketplace";
 
 export default function ThreadPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { session } = useSession();
+  const { refresh: refreshNotifications } = useNotifications();
   const [detail, setDetail] = React.useState<ThreadDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -27,12 +29,14 @@ export default function ThreadPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Failed to load thread");
       setDetail(json.data); setError("");
-      // mark read
+      // mark read (already-open thread should not toast)
       await fetch(`/api/threads/${id}/read`, { method: "POST" }).catch(()=>{});
+      // Sync global badge: thread read reduces unread count
+      void refreshNotifications();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally { setLoading(false); }
-  }, [id]);
+  }, [id, refreshNotifications]);
 
   React.useEffect(() => { const controller = new AbortController(); void (async () => { await Promise.resolve(); if(!controller.signal.aborted) await load(); })(); return () => controller.abort(); }, [load]);
   React.useEffect(()=>{

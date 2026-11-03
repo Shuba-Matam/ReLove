@@ -6,6 +6,8 @@ import { Search, Plus, Mail, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSession } from "@/lib/client/session";
+import { useNotifications } from "@/lib/client/notifications";
+import { UnreadBadge } from "@/components/notifications/unread-badge";
 import { cn } from "@/lib/utils";
 
 export function SiteHeader() {
@@ -13,6 +15,7 @@ export function SiteHeader() {
   const pathname = usePathname();
   const sp = useSearchParams();
   const { session } = useSession();
+  const { unreadCount } = useNotifications();
   const isDemo = session?.mode === "demo";
   const qInit = sp.get("q") ?? "";
   const [search, setSearch] = React.useState<{ route: string; value: string } | null>(null);
@@ -63,8 +66,15 @@ export function SiteHeader() {
             <Plus className="size-4" />
           </Link>
 
-          <Button asChild variant="ghost" size="icon" aria-label="Inbox" className="size-8">
-            <Link href="/inbox"><Mail className="size-[18px]" /></Link>
+          <Button asChild variant="ghost" size="icon" aria-label={unreadCount > 0 ? `Inbox, ${unreadCount} unread` : "Inbox"} className="relative size-8">
+            <Link href="/inbox">
+              <Mail className="size-[18px]" aria-hidden="true" />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1">
+                  <UnreadBadge count={unreadCount} className="min-h-[18px] min-w-[18px] px-1 text-[10px] leading-none" />
+                </span>
+              )}
+            </Link>
           </Button>
 
           {session?.user ? (

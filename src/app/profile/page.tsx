@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useSession } from "@/lib/client/session";
+import { PushOptInCard } from "@/components/notifications/push-opt-in";
 
 export default function ProfilePage() {
   const { session, refresh, loading } = useSession();
@@ -68,7 +69,11 @@ export default function ProfilePage() {
             </div>
           </form>
         </CardContent>
-      </Card>
-    </div>
+        </Card>
+        <PushOptInCard />
+        <p className="text-center text-[11px] leading-4 text-[#9AA4B8]">
+          In-app message toasts appear while Re-Love is open (30s visible-tab check, focus refresh). Email &amp; closed-app push require owner-approved schema — see docs/NOTIFICATION-PROPOSAL.md, no external sends yet.
+        </p>
+      </div>
   );
 }

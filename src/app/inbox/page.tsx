@@ -3,10 +3,12 @@ import * as React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/client/session";
+import { useNotifications } from "@/lib/client/notifications";
 import type { ThreadSummary } from "@/lib/marketplace";
 
 export default function InboxPage() {
   const { session } = useSession();
+  const { refresh: refreshNotifications } = useNotifications();
   const isDemo = session?.mode === "demo";
   const [threads, setThreads] = React.useState<ThreadSummary[] | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -19,10 +21,12 @@ export default function InboxPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Failed to load inbox");
       setThreads(json.data); setError("");
+      // Keep global unread indicator in sync without duplicating polling logic
+      void refreshNotifications();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load inbox");
     } finally { setLoading(false); }
-  }, []);
+  }, [refreshNotifications]);
 
   React.useEffect(() => { const controller = new AbortController(); void (async () => { await Promise.resolve(); if(!controller.signal.aborted) await load(); })(); return () => controller.abort(); }, [load]);
   React.useEffect(() => {
