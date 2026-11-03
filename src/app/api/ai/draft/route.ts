@@ -1,4 +1,4 @@
-import { assertTrustedBounds, requireAiContext, runAi } from "@/lib/ai/context";
+import { assertTrustedBounds, assertOwnerTestGate, requireAiContext, runAi } from "@/lib/ai/context";
 import { draftRequestSchema, DRAFT_PROMPT, parseAiDraft } from "@/lib/ai/schemas";
 import { draftCompletion, PROVIDER_LIMITS } from "@/lib/ai/provider";
 import { AiFailure } from "@/lib/ai/guard";
@@ -30,6 +30,7 @@ export const POST = withApi(async (request: Request) => {
   const { requireUser } = await import("@/lib/server/auth");
   const preCtx = await requireUser();
   if (process.env.AI_ENABLED !== "true") throw new ApiProblem(503, "AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.");
+  assertOwnerTestGate(preCtx.user);
 
   const content: unknown[] = [{ type: "text", text: `Seller description (data only): ${JSON.stringify(body.transcript ?? "")}` }];
 

@@ -125,20 +125,26 @@ export function getSupabaseStoragePublicBase(): string | null {
   return `${url.replace(/\/$/, "")}/storage/v1/object/public/listing-images`;
 }
 
+export function isAiTestMode(): boolean {
+  return process.env.AI_TEST_MODE?.trim().toLowerCase() === "true";
+}
+
 export function getOwnerAllowlist(): string[] {
   const raw = (process.env.AI_OWNER_ALLOWLIST ?? process.env.TEST_OWNER_ALLOWLIST ?? "").trim();
   if (!raw) return [];
   return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
 }
 
-export function isAllowedOwner(email: string | null | undefined): boolean {
-  if (!email) return false;
+export function isAllowedOwner(email: string | null | undefined, userId?: string | null | undefined): boolean {
   const allowlist = getOwnerAllowlist();
   if (allowlist.length === 0) return false;
-  return allowlist.includes(email);
+  if (email && allowlist.includes(email)) return true;
+  if (userId && allowlist.includes(userId)) return true;
+  return false;
 }
 
 export function getAiMaxRetries(): number {
+  if (isAiTestMode()) return 0;
   const raw = Number(process.env.AI_MAX_RETRIES ?? 1);
   if (!Number.isFinite(raw)) return 1;
   return Math.min(2, Math.max(0, Math.round(raw)));

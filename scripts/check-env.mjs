@@ -437,18 +437,22 @@ async function main() {
   }
 
   // Hard-budget metering credential (serviceRoleKey already declared above)
-  const hardBudgetRaw = env.AI_HARD_BUDGET?.trim().toLowerCase();
-  const hardBudget = hardBudgetRaw === "true";
-  if (env.AI_HARD_BUDGET !== undefined && hardBudgetRaw !== "true" && hardBudgetRaw !== "false" && hardBudgetRaw !== "") {
-    errors.push("AI_HARD_BUDGET must be true|false if set (default false)");
-  }
-  if (hardBudget) {
-    if (!serviceRoleKey) errors.push("AI_HARD_BUDGET=true requires SUPABASE_SERVICE_ROLE_KEY (server-only, never NEXT_PUBLIC) for metering RPCs; missing fails closed");
-    else infos.push(`AI_HARD_BUDGET=true with ${maskPresence(serviceRoleKey)} (service_role metering via docs/drafts/003)`);
-    infos.push("Hard-budget ON: candidate 003 monetary caps enforce; legacy reserve_ai_usage revoked; missing pricebook/caps fails closed");
+  // Hard-budget metering mandatory: no legacy bypass; AI_HARD_BUDGET removed
+  if (env.AI_HARD_BUDGET !== undefined && env.AI_HARD_BUDGET.trim() !== "") warnings.push("AI_HARD_BUDGET is deprecated and ignored — metering is mandatory via SUPABASE_SERVICE_ROLE_KEY and ai_pricebook; remove this var");
+  if (serviceRoleKey) infos.push(`SUPABASE_SERVICE_ROLE_KEY present ${maskPresence(serviceRoleKey)} (mandatory metering via docs/drafts/003; missing fails closed)`);
+  else infos.push("SUPABASE_SERVICE_ROLE_KEY unset — AI will fail closed (hard-budget mandatory; no legacy bypass)");
+  infos.push("Hard-budget mandatory: candidate 003 monetary caps enforce; legacy reserve_ai_usage revoked; missing pricebook/caps fails closed; see /api/session ai_hard_budget_ready (env-only, not DB ready)");
+  // Owner-only test gate
+  const aiTestModeRaw = env.AI_TEST_MODE?.trim().toLowerCase();
+  if (env.AI_TEST_MODE !== undefined && aiTestModeRaw !== "true" && aiTestModeRaw !== "false" && aiTestModeRaw !== "") warnings.push("AI_TEST_MODE should be true|false if set (blank disables test gate)");
+  if (aiTestModeRaw === "true") {
+    const allowlistRaw = (env.AI_OWNER_ALLOWLIST ?? env.TEST_OWNER_ALLOWLIST ?? "").trim();
+    if (!allowlistRaw) warnings.push("AI_TEST_MODE=true requires nonempty AI_OWNER_ALLOWLIST — empty denies all AI usage before metering");
+    else infos.push(`AI_TEST_MODE=true with allowlist (${allowlistRaw.split(/[,\s]+/).filter(Boolean).length} entry/entries) — only allowlisted owner may use AI, retries forced 0`);
+    const retriesRaw = env.AI_MAX_RETRIES?.trim();
+    if (retriesRaw !== undefined && retriesRaw !== "" && retriesRaw !== "0") warnings.push("AI_TEST_MODE=true forces AI_MAX_RETRIES=0 regardless of config — set 0");
   } else {
-    infos.push("AI_HARD_BUDGET off (default): legacy per-day caps via reserve_ai_usage remain usable before 003, but do not claim micro-USD protection; see /api/session ai_hard_budget_ready");
-    if (serviceRoleKey) infos.push(`SUPABASE_SERVICE_ROLE_KEY present but ignored until AI_HARD_BUDGET=true (${maskPresence(serviceRoleKey)})`);
+    infos.push("AI_TEST_MODE off (default) — public mode possible later but default AI_ENABLED=false");
   }
   // Moderation intentionally disabled in Meta-only mode
   infos.push("Moderation disabled: app-only Meta intent, no approved selector; charging Baseten coding pool prohibited (see src/lib/server/env.ts)");
@@ -522,7 +526,9 @@ async function main() {
         META_API_KEY: maskPresence(env.META_API_KEY),
         META_MODEL: maskPresence(env.META_MODEL),
         META_CHAT_ENDPOINT: maskPresence(env.META_CHAT_ENDPOINT),
-        AI_HARD_BUDGET: maskPresence(env.AI_HARD_BUDGET),
+        AI_TEST_MODE: maskPresence(env.AI_TEST_MODE),
+        AI_OWNER_ALLOWLIST: maskPresence(env.AI_OWNER_ALLOWLIST),
+        AI_MAX_RETRIES: maskPresence(env.AI_MAX_RETRIES),
         SUPABASE_SERVICE_ROLE_KEY: maskPresence(env.SUPABASE_SERVICE_ROLE_KEY),
       },
     };

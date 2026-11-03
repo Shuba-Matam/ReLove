@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { assertTrustedBounds, requireAiContext } from "@/lib/ai/context";
+import { assertTrustedBounds, assertOwnerTestGate, requireAiContext } from "@/lib/ai/context";
 import { makeCutout } from "@/lib/ai/cutout";
 import { PROVIDER_LIMITS } from "@/lib/ai/provider";
 import { ApiProblem, assertSameOrigin, json, readJson, withApi } from "@/lib/server/http";
@@ -22,6 +22,7 @@ export const POST = withApi(async (request: Request) => {
   const { requireUser } = await import("@/lib/server/auth");
   const preCtx = await requireUser();
   if (process.env.AI_ENABLED !== "true") throw new ApiProblem(503, "AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.");
+  assertOwnerTestGate(preCtx.user);
   const { data: listingPre, error: preErr } = await preCtx.supabase
     .from("listings")
     .select("id,seller_id,image_path,title,ai_status,cutout_path,cutout_url")

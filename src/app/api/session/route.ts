@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/server/supabase";
-import { getAiFeatureAvailability, getAppMode, isAuthConfigured } from "@/lib/server/env";
+import { getAiFeatureAvailability, getAppMode, getOwnerAllowlist, isAiTestMode, isAuthConfigured } from "@/lib/server/env";
 import { json, withApi } from "@/lib/server/http";
 import type { Profile, SessionInfo } from "@/lib/marketplace";
 
@@ -9,15 +9,15 @@ export const dynamic = "force-dynamic";
 export const GET = withApi(async () => {
   const mode = getAppMode();
   const availability = getAiFeatureAvailability();
-  const ai_enabled = availability.any;
-  const auth_configured = isAuthConfigured();
-  const ai_features = { draft: availability.draft, transcribe: availability.transcribe, cutout: availability.cutout, moderation: availability.moderation } as const;
+  let ai_enabled = availability.any;
+  let ai_features = { draft: availability.draft, transcribe: availability.transcribe, cutout: availability.cutout, moderation: availability.moderation } as const;
   const ai_provider = availability.provider;
-  const ai_hard_budget = process.env.AI_HARD_BUDGET === "true";
+  // Hard-budget metering mandatory: no legacy bypass; env-only, must not claim DB ready
+  const ai_hard_budget = true;
   const ai_metering_configured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
-  const ai_hard_budget_ready = !ai_hard_budget || ai_metering_configured; // safe setup state: if hard mode requires service key
+  const ai_hard_budget_ready = ai_metering_configured;
 
-  if(mode !== "live") return json({ user:null, mode, ai_enabled:false, auth_configured:false, ai_features: { draft:false, transcribe:false, cutout:false, moderation:false }, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready });
+  if (mode !== "live") return json({ user: null, mode, ai_enabled: false, auth_configured: false, ai_features: { draft: false, transcribe: false, cutout: false, moderation: false }, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready });
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
     const data = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
@@ -26,6 +26,17 @@ export const GET = withApi(async () => {
 
   const { data: userData } = await supabase.auth.getUser();
   const authUser = userData?.user ?? null;
+
+  // Owner-only test gate: per-feature visibility only for allowlisted owner after real auth user known (not Profile lacking email)
+  if (isAiTestMode()) {
+    const allowlist = getOwnerAllowlist();
+    const isOwner = Boolean(authUser && ((authUser.email && allowlist.includes(authUser.email)) || allowlist.includes(authUser.id)));
+    const allowlistOk = allowlist.length > 0 && isOwner;
+    if (!allowlistOk) {
+      ai_enabled = false;
+      ai_features = { draft: false, transcribe: false, cutout: false, moderation: false };
+    }
+  }
 
   if (!authUser) {
     const data = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;

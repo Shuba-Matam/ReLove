@@ -2,9 +2,22 @@ import "server-only";
 import { requireUser } from "@/lib/server/auth";
 import { ApiProblem } from "@/lib/server/http";
 import { AiFailure, runMeteredGuarded, type MeteredLedger } from "./guard";
-import { getDraftProvider, getFeatureProviderModel } from "@/lib/server/env";
+import { getDraftProvider, getFeatureProviderModel, getOwnerAllowlist, isAiTestMode } from "@/lib/server/env";
 import { createMeteringClient, meterReserve, meterComplete, hashSource, fetchPricebookRow, enforcePricebookBounds, pricebookFingerprint } from "./meter";
 import { PROVIDER_LIMITS } from "./provider";
+
+/**
+ * Owner-only test gate: when AI_TEST_MODE=true, only exact verified auth user email/ID in
+ * server-configured allowlist may use AI; empty/unknown denies before metering/pricebook/provider.
+ * Shared helper for early cached returns to avoid bypass.
+ */
+export function assertOwnerTestGate(user: { id: string; email?: string | null }): void {
+  if (!isAiTestMode()) return;
+  const allowlist = getOwnerAllowlist();
+  if (allowlist.length === 0) throw new ApiProblem(403, "AI_OWNER_REQUIRED", "AI assistance is not available for this account.");
+  const allowed = (user.email && allowlist.includes(user.email)) || allowlist.includes(user.id);
+  if (!allowed) throw new ApiProblem(403, "AI_OWNER_REQUIRED", "AI assistance is not available for this account.");
+}
 
 /**
  * Server-only secrets, auth+ownership checks, kill switch, atomic caps via DB.
@@ -29,6 +42,7 @@ function keyForFeature(feature: AiFeature): string | undefined {
 export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?: string; idempotencyKey?: string; listingId?: string | null }) {
   const context = await requireUser();
   if (process.env.AI_ENABLED !== "true") throw new ApiProblem(503, "AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.");
+  assertOwnerTestGate(context.user);
   const key = keyForFeature(feature);
   if (!key) throw new ApiProblem(503, "AI_UNAVAILABLE", "AI assistance is not configured. You can continue manually.");
   const daily = cap("AI_DAILY_LIMIT", 50);
@@ -110,11 +124,12 @@ export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?:
 
 export async function runAi<T>(ledger: MeteredLedger, operation: (signal: AbortSignal, attempt: number) => Promise<T>, opts?: { maxRetries?: number; validateCached?: (cached: unknown) => T | null }): Promise<T> {
   try {
+    const effectiveRetries = isAiTestMode() ? 0 : (opts?.maxRetries ?? 1);
     const guarded = await runMeteredGuarded<T>({
       ledger,
       operation,
       validateCached: opts?.validateCached,
-      maxRetries: opts?.maxRetries ?? 1,
+      maxRetries: effectiveRetries,
     });
     if (guarded.status === "duplicate_done") {
       const cached = guarded.cached;
