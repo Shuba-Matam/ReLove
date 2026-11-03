@@ -1,11 +1,10 @@
 "use client";
 
-import { Bell, Info } from "lucide-react";
+import { Bell } from "lucide-react";
 
 /**
  * Static informational card — no permission prompt, no stored endpoint.
- * Push remains disabled pending owner-approved schema (docs/drafts/004_notifications.sql).
- * This avoids SSR/client hydration mismatch and false "enabled" claims.
+ * Push is disabled; static short copy only.
  */
 export function PushOptInCard() {
   return (
@@ -22,12 +21,7 @@ export function PushOptInCard() {
             Push notifications — coming soon
           </h3>
           <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">
-            Get notified even when Re-Love is closed. We&apos;re finishing secure push delivery — no action needed yet. In-app
-            toasts already notify you while the app is open.
-          </p>
-          <p className="mt-3 inline-flex gap-2 rounded-lg bg-[#020102] px-2.5 py-1.5 text-xs leading-4 text-[#9AA4B8] ring-1 ring-[#021640]/50">
-            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-            <span>Closed-app push needs owner-approved setup. No push data is collected now. Email stays disabled pending a verified sender domain.</span>
+            In-app toasts already notify you while the app is open.
           </p>
         </div>
       </div>

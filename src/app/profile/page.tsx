@@ -71,9 +71,6 @@ export default function ProfilePage() {
         </CardContent>
         </Card>
         <PushOptInCard />
-        <p className="text-center text-[11px] leading-4 text-[#9AA4B8]">
-          In-app message toasts appear while Re-Love is open (30s visible-tab check, focus refresh). Email &amp; closed-app push require owner-approved schema — see docs/NOTIFICATION-PROPOSAL.md, no external sends yet.
-        </p>
       </div>
   );
 }

@@ -53,10 +53,16 @@ export const GET = withApi(async () => {
 
   if (countErr) {
     console.error("[notifications/summary] count error:", countErr);
-    throw new ApiProblem(500, "db_error", "Failed to load notifications.");
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Notifications are temporarily unavailable. Please try again.");
   }
 
-  const unreadCount = count ?? 0;
+  // Null/non-integer count must not become 0 — treat as unavailable
+  if (count === null || typeof count !== "number" || !Number.isInteger(count) || count < 0) {
+    console.error("[notifications/summary] invalid count:", count);
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Notifications are temporarily unavailable. Please try again.");
+  }
+
+  const unreadCount = count;
 
   if (unreadCount === 0) {
     return json({ unreadCount: 0, messages: [] });
@@ -68,22 +74,22 @@ export const GET = withApi(async () => {
     .eq("recipient_id", user.id)
     .is("read_at", null)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(20);
 
   if (msgErr) {
     console.error("[notifications/summary] messages error:", msgErr);
-    throw new ApiProblem(500, "db_error", "Failed to load notifications.");
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Notifications are temporarily unavailable. Please try again.");
   }
 
   if (!msgRows || msgRows.length === 0) {
     return json({ unreadCount, messages: [] });
   }
 
-  // Validate rows shape (defensive, but db is trusted)
   const parsedMsgs = z.array(messageRowSchema).safeParse(msgRows);
   if (!parsedMsgs.success) {
     console.error("[notifications/summary] message parse error:", parsedMsgs.error);
-    throw new ApiProblem(500, "db_error", "Failed to load notifications.");
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Notifications are temporarily unavailable. Please try again.");
   }
 
   const threadIds = Array.from(new Set(parsedMsgs.data.map((m) => m.thread_id)));
@@ -102,21 +108,17 @@ export const GET = withApi(async () => {
 
   if (threadErr) {
     console.error("[notifications/summary] threads error:", threadErr);
-    throw new ApiProblem(500, "db_error", "Failed to load notifications.");
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Notifications are temporarily unavailable. Please try again.");
   }
 
   const parsedThreads = z.array(threadRowSchema).safeParse(threadRows ?? []);
-  // If parse fails, fall back to minimal mapping without throwing (privacy safe)
-  const threadMap = new Map<string, z.infer<typeof threadRowSchema>>();
-  if (parsedThreads.success) {
-    for (const t of parsedThreads.data) threadMap.set(t.id, t);
-  } else {
-    // Best effort: use raw data as is if schema mismatch, but log
+  if (!parsedThreads.success) {
     console.error("[notifications/summary] thread parse error:", parsedThreads.error);
-    for (const t of (threadRows as unknown as z.infer<typeof threadRowSchema>[]) ?? []) {
-      if (t?.id) threadMap.set(t.id, t);
-    }
+    throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Notifications are temporarily unavailable. Please try again.");
   }
+
+  const threadMap = new Map<string, z.infer<typeof threadRowSchema>>();
+  for (const t of parsedThreads.data) threadMap.set(t.id, t);
 
   const messages = parsedMsgs.data
     .map((m) => {
@@ -137,6 +139,5 @@ export const GET = withApi(async () => {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Do not return bodies; response is Zod-validated on client as well
   return json({ unreadCount, messages });
 });

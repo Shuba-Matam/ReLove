@@ -1,4 +1,3 @@
-import type { ThreadSummary } from "@/lib/marketplace";
 import { z } from "zod";
 
 export const NOTIFICATION_POLL_INTERVAL_MS = 30_000;
@@ -19,18 +18,6 @@ export interface NotificationToastData {
   bodyPreview: string | null;
 }
 
-export interface ThreadSnapshot {
-  unreadCount: number;
-  lastMessageCreatedAt: string | null;
-  lastMessageSenderId: string | null;
-}
-
-export function computeGlobalUnreadCount(threads: ThreadSummary[]): number {
-  let sum = 0;
-  for (const t of threads) sum += Math.max(0, t.unread_count ?? 0);
-  return sum;
-}
-
 export function getOpenThreadId(pathname: string | null | undefined): string | null {
   if (!pathname) return null;
   const match = pathname.match(/^\/inbox\/([^/]+)/);
@@ -40,115 +27,8 @@ export function getOpenThreadId(pathname: string | null | undefined): string | n
   return candidate;
 }
 
-export function createToastDedupeKey(thread: ThreadSummary): string | null {
-  if (!thread.last_message?.created_at) return null;
-  return `${thread.id}:${thread.last_message.created_at}:${thread.last_message.sender_id ?? ""}`;
-}
-
-export function buildThreadSnapshotMap(threads: ThreadSummary[]): Map<string, ThreadSnapshot> {
-  const map = new Map<string, ThreadSnapshot>();
-  for (const t of threads) {
-    map.set(t.id, {
-      unreadCount: t.unread_count ?? 0,
-      lastMessageCreatedAt: t.last_message?.created_at ?? null,
-      lastMessageSenderId: t.last_message?.sender_id ?? null,
-    });
-  }
-  return map;
-}
-
 export function shouldPollNotifications(mode: string | null | undefined, userId: string | null | undefined): boolean {
   return mode === "live" && Boolean(userId);
-}
-
-export interface DetectNewToastsOptions {
-  prevMap: Map<string, ThreadSnapshot>;
-  nextThreads: ThreadSummary[];
-  currentUserId: string;
-  openThreadId: string | null;
-  seenDedupeKeys: Set<string>;
-  isInitial: boolean;
-}
-
-export interface DetectNewToastsResult {
-  toasts: NotificationToastData[];
-  nextMap: Map<string, ThreadSnapshot>;
-  nextSeenKeys: Set<string>;
-}
-
-/** Truncate body to max 80 chars with ellipsis; never return empty string. */
-export function truncateBodyPreview(body: string | null | undefined, max = 80): string | null {
-  if (!body) return null;
-  const trimmed = body.trim();
-  if (!trimmed) return null;
-  if (trimmed.length <= max) return trimmed;
-  return trimmed.slice(0, max - 1).trimEnd() + "…";
-}
-
-/**
- * Pure helper: detect new incoming messages that deserve a toast.
- * Constraints:
- * - Never toast on initial history (isInitial).
- * - Never toast for sent/self (last_message.sender_id === currentUserId).
- * - Never toast for already-open thread.
- * - Dedupe by message key (threadId + createdAt + sender).
- * - Never toast on threads with unread_count 0 or no last_message.
- */
-export function detectNewMessageToasts(options: DetectNewToastsOptions): DetectNewToastsResult {
-  const { prevMap, nextThreads, currentUserId, openThreadId, seenDedupeKeys, isInitial } = options;
-  const nextMap = buildThreadSnapshotMap(nextThreads);
-
-  if (isInitial) {
-    const nextSeen = new Set(seenDedupeKeys);
-    for (const t of nextThreads) {
-      const key = createToastDedupeKey(t);
-      if (key) nextSeen.add(key);
-    }
-    return { toasts: [], nextMap, nextSeenKeys: pruneSeenHistory(nextSeen, NOTIFICATION_SEEN_HISTORY_MAX) };
-  }
-
-  const toasts: NotificationToastData[] = [];
-  const nextSeen = new Set(seenDedupeKeys);
-
-  for (const t of nextThreads) {
-    if (!t.last_message) continue;
-    if (t.unread_count <= 0) continue;
-    if (t.last_message.sender_id === currentUserId) continue;
-    if (openThreadId && t.id === openThreadId) continue;
-
-    const prev = prevMap.get(t.id);
-    const key = createToastDedupeKey(t);
-    if (key && nextSeen.has(key)) continue;
-
-    let isNew = false;
-    if (!prev) {
-      isNew = true;
-    } else {
-      const unreadIncreased = t.unread_count > prev.unreadCount;
-      const messageChanged = t.last_message.created_at !== prev.lastMessageCreatedAt;
-      const senderIsOther = t.last_message.sender_id !== currentUserId;
-      if (senderIsOther && (unreadIncreased || messageChanged)) {
-        isNew = true;
-      }
-    }
-
-    if (!isNew) continue;
-    if (key) nextSeen.add(key);
-
-    toasts.push({
-      id: key ?? `${t.id}:${t.last_message.created_at}`,
-      threadId: t.id,
-      listingTitle: t.listing.title,
-      listingImageUrl: t.listing.image_url,
-      participantName: t.participant.display_name,
-      createdAt: t.last_message.created_at,
-      bodyPreview: truncateBodyPreview(t.last_message.body, 80),
-    });
-  }
-
-  const capped = toasts.slice(0, NOTIFICATION_MAX_TOASTS);
-
-  return { toasts: capped, nextMap, nextSeenKeys: pruneSeenHistory(nextSeen, NOTIFICATION_SEEN_HISTORY_MAX) };
 }
 
 // --- New efficient summary types (authenticated, no-store, no per-thread queries) ---

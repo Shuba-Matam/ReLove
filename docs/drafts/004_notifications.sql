@@ -1,10 +1,7 @@
--- Re-Love 004 notifications — REVIEW CANDIDATE ONLY (DEFAULT DISABLED)
--- DO NOT APPLY REMOTELY. Owner approval required. Local PGlite review only.
--- See docs/NOTIFICATION-PROPOSAL.md for blockers and setup guidance.
--- Scope: queue from messages.recipient_id via trusted trigger (not auth.uid sender),
---        honor preferences/opt-out, private subscriptions, worker-only claims with lease fencing,
---        dedupe message+recipient+channel/device, attempt budgets incl failures, retry cap, recheck.
--- Owner has no custom domain; free Vercel cannot send email. Email remains disabled pending verified sender.
+-- Re-Love 004 notifications — NOT APPROVAL READY — DO NOT APPLY — KNOWN UNSAFE DEFECTS (see header)
+-- Defects: attempts only on failure completion not claim (crashed leases unlimited); caps count rows not provider attempts;
+-- opt-out after delivery not claim/pre-send; unique(user,endpoint) leaks shared-device cross-account; logout doesn't revoke; idempotency header unverified.
+-- REVIEW CANDIDATE ONLY, DEFAULT DISABLED, never remote-apply. See docs/NOTIFICATION-PROPOSAL.md §5.
 
 -- ============================================================================
 -- 1) Preferences — one row per auth user, opt-in false (DEFAULT DISABLED)

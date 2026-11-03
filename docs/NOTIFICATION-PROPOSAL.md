@@ -1,6 +1,9 @@
 # Re-Love Notifications — Proposal & Implementation Status
 
-**Status:** Frontend in-app path implemented with efficient authenticated summary polling. Email + closed-app push remain **schema-candidate and provider-blocked** (candidate at `docs/drafts/004_notifications.sql`, DEFAULT DISABLED, never remote-apply). No external sends, no provider setup, no env reads/remote writes. Owner has no custom domain — free Vercel only. Email stays disabled; push needs no paid Vercel. Owner must approve candidate before any DB change.
+> ⚠️ **NOT APPROVAL READY — DURABLE EMAIL/PUSH CANDIDATE UNSAFE (DO NOT APPLY)**
+> `docs/drafts/004_notifications.sql` has known defects, docs-only, never remote-apply. See §5 for defect list. No worker, no sends, no env/keys.
+
+**Status:** In-app toasts shipped (summary polling, bounded, identity-gated). Durable push/email **NOT READY** — candidate blocked. No external sends, no provider setup, no env reads.
 
 **Main branch:** `77c9e3b` — `t3/message-toasts-email-proposal` (this worktree).  
 **User requests:** message pop-ups + email notifications + closed-app push. Subagents do code, not Astra. `AGENTS.md` read. Next may be custom — verified `src/lib/server/*` contracts before writing code.
@@ -107,25 +110,16 @@ No sender listing description, no message body, no participant email in payload 
 
 ---
 
-## 5) Schema Candidate — `docs/drafts/004_notifications.sql` (DEFAULT DISABLED, do not apply)
+## 5) Schema Candidate — `docs/drafts/004_notifications.sql` — **NOT APPROVAL READY, DO NOT APPLY**
 
-**All notification tables are `PRIVATE` — never public email profiles.** Email is read from `auth.users.email` at send time; we store only preferences + deduped outbox + private push subscriptions. Location: `docs/drafts/004_notifications.sql` — **candidate for approval only, never remote-apply; local PGlite review only**. The previous unsafe inline draft has been removed from this doc. Release integrator owns final scope review and remote application. Do not read `.env.local` secrets.
+> **Known UNSAFE defects — must not be built now:**
+> - Attempts increment only on `complete_notification_send(..., ok=false)` not on pre-send claim; crashed leases can retry unlimited without counting.
+> - Caps count `notification_outbox` rows per day, not provider attempts — not true send caps.
+> - Opt-out checked only at enqueue + `complete`, not at `claim`/pre-send — delivery may occur after unsubscribe.
+> - `unique(user,endpoint)` allows shared-device cross-account leakage; logout does not revoke subscriptions.
+> - Generic provider `Idempotency-Key` claim not verified against provider behavior.
 
-What the candidate fixes versus the obsolete draft:
-- Queue via trusted trigger `messages.recipient_id` (not `auth.uid()` sender) — eliminates sender-as-recipient bug.
-- Dedupe `unique(recipient_id, channel, dedupe_key)` with `recipient+channel+message[:device]` stable keys — `allowed=true` on duplicate returns existing instead of free send; `ON CONFLICT DO NOTHING` is idempotent.
-- Attempt budgets count **all** attempts including failures (`created_at >= today` regardless of status) — failed attempts cannot bypass caps.
-- Worker-only claims with lease fencing (`lease_owner`, `lease_expires_at`, `FOR UPDATE SKIP LOCKED`, stale-lease reap) — ordinary users cannot queue/claim/mark delivered; service_role only.
-- Opt-out recheck at enqueue and claim/complete time; `unsubscribed` terminal states; push per-device rows via `push_subscription_id`.
-- Subscription ownership via RLS `user_id = auth.uid()` — A→B switch isolated, logout leaves invisible subscriptions (no cross-read).
-- Documented at-least-once limits and provider `Idempotency-Key` honestly.
-
-Quick review:
-```bash
-# verify candidate loads over existing 001+002 without error in PGlite
-node --test tests/database.test.ts  # existing marketplace checks still pass
-npm test  # includes notification helper + candidate verification
-```
+**All tables PRIVATE; candidate docs-only, never apply. Location: `docs/drafts/004_notifications.sql`.**
 
 ---
 
