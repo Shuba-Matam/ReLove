@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     # Canonical-repo-only fork protection; schedule already default-branch-only but guard manual forks
-    if: github.repository == 'Shuba-Matam/ReLove'
+    if: github.repository == 'Shuba-Matam/ReLove' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,13 +34,14 @@ jobs:
 
       - name: Probe /api/health (bounded, no npm install, no secrets)
         # Hard cutoff via script — even manual workflow_dispatch makes zero requests after 2026-11-17T00:00:00Z
-        # No network after judging window; explicit SKIP distinct from PASS
-        run: node scripts/check-availability.mjs --cutoff=2026-11-17T00:00:00Z
+        # No health request after judging window; explicit SKIP distinct from PASS
+        run: node scripts/check-availability.mjs
 
 # Notes:
 # - No secrets, no npm install, no auth headers, no deployment/push/schema/notification sending.
-# - Failure action status visible (check runs red); no messages/emails/issue creation.
-# - Judging window: active until November 16 2026 end UTC (2026-11-17T00:00:00Z). Planned 2 req/day <=28 total until cutoff.
+# - Failure action status visible (check runs red); no custom messages or issue creation.
+# - Judging window: active until November 16 2026 end UTC (2026-11-17T00:00:00Z).
+# - At most 28 scheduled health requests from November 3 through 16; manual runs are additional.
 # - This workflow is inactive until merged to default branch; local candidate requires default-branch integration.
 # - Schedule may delay and is disabled after 60 days repo inactivity per GitHub docs.
 # - Does not guarantee uptime nor prevent Supabase free-project pausing (see docs/AVAILABILITY.md).

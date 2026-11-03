@@ -1,58 +1,39 @@
-# Availability — Re-Love judging-window probe
+# Judging availability checks
 
-**This is a local candidate only.** This file/workflow is not deployed or active until merged to the default branch (`main`) in the canonical repository `Shuba-Matam/ReLove`. Until integrated, it makes no requests and has no effect.
+This local candidate requires integration into the canonical repository's default branch before the schedule becomes active. It does not deploy the app or change its database.
 
-## What it does
+## Behavior
 
-- Bounded, read-only `GET /api/health` probe against the canonical origin `https://re-love-pi.vercel.app`
-- Validates live readiness: `200` + `Cache-Control: private, no-store` + envelope `{ data:{ status:'ok', mode:'live' }, mode:'live' }`
-- `demo` / `setup` / `503` / malformed / missing `no-store` / redirect / oversized / timeout all correctly fail — never reports false healthy
-- Uses explicit `Cache-Control: no-store` request to defeat cached readiness (response must also contain `no-store`)
-- HTTPS for production, HTTP only for loopback (`localhost`/`127.0.0.1`/`::1`) — rejects `userinfo`/`path`/`query`/`hash` in origin
-- `redirect: manual`, single request, no retries, `AbortSignal` timeout includes body consumption, bounded body bytes (default 32768)
-- Safe errors: never prints arbitrary response text, `Authorization`, or `Cookie` values
+The workflow runs twice a day at 03:17 and 15:17 UTC (08:47 and 20:47 IST). Each run makes one read-only request to `https://re-love-pi.vercel.app/api/health`. That existing endpoint reads categories and listings through the app's normal database client; the probe needs no secrets, authentication, package installation, or AI calls.
 
-## Planned load
+A pass requires HTTP 200, an exact `no-store` cache directive, and `{mode:"live", data:{status:"ok", mode:"live"}}`. Demo data, setup mode, redirects, oversized or malformed responses, and network failures fail the check. The default deadline is five seconds including body reads; the body limit is 32 KiB. There are no retries. Error bodies and arbitrary response values are never printed.
 
-- Workflow `.github/workflows/availability.yml` — scheduled `17 3,15 * * *` (twice daily, off top of hour)
-- `2 requests/day × ~14 days = <=28 requests` until cutoff `2026-11-17T00:00:00Z` (end of November 16 UTC)
-- No `npm install`, no secrets, `contents: read`, Node 22.14, job timeout 3 minutes, concurrency group
+The health-request cutoff is fixed at **November 17, 2026, 00:00 UTC** (05:30 IST), covering November 16 UTC. After that instant, automatic and manual workflow runs print `SKIP` and make no health request. Clock injection is available only to imported unit tests; the CLI cannot override the clock or extend the cutoff. A skipped probe exits successfully but explicitly reports `ok:false, skipped:true`; it is not evidence that the app is healthy. GitHub still starts the workflow and performs checkout/setup until the workflow is disabled or removed.
 
-## Hard bounded judging window
+There are at most 28 scheduled health requests from November 3 through November 16. Later integration reduces that number. Manual workflow runs or manual CLI invocations add requests before the cutoff. Both scheduled and manual workflow runs are restricted to the canonical repository and its default branch.
 
-- **Cutoff:** `2026-11-17T00:00:00Z` (November 16 end UTC, inclusive). On or after this instant the checker and workflow make **zero network requests**, even on manual `workflow_dispatch`.
-- Source guard lives in `scripts/check-availability.mjs` (`isExpired()` / `CUTOFF_MS`) and is unit-testable via `--now` / `--cutoff` injection; tests verify boundary and zero-request behavior.
-- Workflow passes `--cutoff=2026-11-17T00:00:00Z` explicitly; script also defaults to the same instant if flag omitted.
-- After expiry the run logs `SKIP` (exit 0) — distinct from `PASS` — so judges see a clear skipped state, not false healthy.
-- Failure is visible as a failed check on the commit; the workflow does **not** send messages, emails, or create issues.
-
-## Limitations — what this does not do
-
-- **Not deployed/active locally:** the candidate workflow only runs after integration to `main` (see GitHub schedule note below). This doc itself is the local proposal.
-- **No uptime guarantee:** a passing probe proves momentary `/api/health` live readiness, not continuous availability.
-- **No Supabase pausing prevention guarantee:** free-project pausing docs note _“a few daily app DB requests usually enough”_ — see https://supabase.com/docs/guides/platform/free-project-pausing — but pausing can still occur; this probe is best-effort visibility, not a keep-alive contract.
-- **No live data mutation, auth, credentials, push, schema, or notification sending** — network-free after cutoff, read-only always.
-
-## Manual / local use
+## Running locally
 
 ```sh
 node scripts/check-availability.mjs --help
-node scripts/check-availability.mjs
 node scripts/check-availability.mjs --origin=http://127.0.0.1:3000 --timeout=4000 --json
-# cutoff testing (never hits network when --now >= cutoff)
-node scripts/check-availability.mjs --now=2026-11-17T00:00:00Z
-node scripts/check-availability.mjs --cutoff=2026-11-17T00:00:00Z --now=2026-11-16T23:59:59Z
+# One live read-only request, only before the fixed cutoff:
+node scripts/check-availability.mjs
 ```
 
-Tests (no external network, fake fetch + local HTTP stubs cover timeout/redirect/oversized/demo/cutoff/leakage):
+The origin override accepts a bare HTTPS origin or HTTP loopback (`localhost`, `127.0.0.1`, `[::1]`). Userinfo, paths, query strings and fragments are rejected. A demo server intentionally fails live readiness.
 
 ```sh
 node --test scripts/check-availability.test.mjs
-node --test scripts/release-checks.test.mjs  # includes availability via additive import
 npm run test:release
 ```
 
-## Official docs verified
+Tests use local HTTP servers and injected fetch/clock implementations, never the live deployment. They cover stalled headers and bodies, error responses that never finish, invalid origins, non-live envelopes, redirects, byte limits, fixed cutoff boundaries, CLI output redaction, and expired CLI behavior. The existing release-test entry point imports these tests, so the normal CI job runs them.
 
-- GitHub scheduled workflows: `schedule` runs on the default branch, may delay at high load, and is disabled after 60 days repo inactivity — https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows
-- Supabase free-project pausing: inactive free projects are paused; a few daily DB requests are _usually_ sufficient to prevent pausing, but not guaranteed — https://supabase.com/docs/guides/platform/free-project-pausing
+## Release and operational limits
+
+Integrate the checked commits into `main`, then confirm the workflow appears in Actions. A manual run on the default branch can verify the deployed endpoint before judging ends. Disable or remove the workflow after judging to stop future skipped runs. The workflow uses only `contents: read` and creates no custom messages or issues; GitHub's own workflow notifications follow the account's settings.
+
+A pass establishes momentary health, not continuous uptime. GitHub schedules can be delayed or dropped under load, run only from the default branch, and are disabled after 60 days of inactivity in public repositories: [GitHub scheduled workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
+
+Daily database requests may help keep a free Supabase project active, but are not a guarantee against pausing: [Supabase project pausing](https://supabase.com/docs/guides/platform/free-project-pausing). Check the dashboard and failure notifications during judging; this probe cannot restore a paused project.

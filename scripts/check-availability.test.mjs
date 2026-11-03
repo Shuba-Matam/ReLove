@@ -9,6 +9,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   CANONICAL_ORIGIN,
   CUTOFF_ISO,
@@ -43,6 +45,7 @@ async function listen(server) {
 }
 
 async function close(server) {
+  server.closeAllConnections();
   await new Promise((r) => server.close(r));
 }
 
@@ -133,14 +136,13 @@ describe("check-availability unit: constants & helpers", () => {
   it("parseArgs: defaults canonical, validates ranges", () => {
     const o = parseArgs([]);
     assert.equal(o.origin, CANONICAL_ORIGIN);
-    assert.equal(o.cutoff, CUTOFF_ISO);
     assert.throws(() => parseArgs(["--unknown"]), /unknown option/i);
     assert.throws(() => parseArgs(["--timeout=100"]), /timeout must be/i);
     assert.throws(() => parseArgs(["--timeout=99999"]), /timeout must be/i);
     assert.throws(() => parseArgs(["--body-limit=10"]), /body-limit must be/i);
-    assert.throws(() => parseArgs(["--cutoff=not-date"]), /cutoff must be valid/i);
-    assert.throws(() => parseArgs(["--now=not-date"]), /now must be valid/i);
-    const o2 = parseArgs(["--origin=http://127.0.0.1:3000", "--timeout=2000", "--body-limit=4096", "--cutoff=2026-11-17T00:00:00Z"]);
+    assert.throws(() => parseArgs(["--cutoff=2027-01-01T00:00:00Z"]), /unknown option/i);
+    assert.throws(() => parseArgs(["--now=2026-11-01T00:00:00Z"]), /unknown option/i);
+    const o2 = parseArgs(["--origin=http://127.0.0.1:3000", "--timeout=2000", "--body-limit=4096"]);
     assert.equal(o2.origin, "http://127.0.0.1:3000");
     assert.equal(o2.timeout, 2000);
     assert.equal(o2.bodyLimit, 4096);
@@ -388,7 +390,7 @@ describe("check-availability integration: live healthy vs failures", () => {
       const r = await checkAvailability({ origin, timeout: 400, bodyLimit: 32768, nowMs: Date.parse("2026-11-10T00:00:00Z") });
       assert.equal(r.ok, false);
       // should be timeout
-      assert.ok(r.reason === "timeout" || r.reason === "body_error" || r.reason === "fetch_error" || r.reason === "malformed_json");
+      assert.equal(r.reason, "timeout");
       // But ensure we got a timeout-like handling, not success
       assert.equal(r.skipped, undefined);
     } finally {
@@ -521,8 +523,6 @@ describe("check-availability integration: live healthy vs failures", () => {
     // malformed JSON via fake fetch
     const fakeMalformed = async () => ({
       status: 200,
-      headers: { get: (n) => n.toLowerCase() === "cache-control" ? "private, no-store" : "json" === n ? "application/json" : null },
-      // actually need cache-control no-store to pass that check, otherwise it fails earlier
       headers: { get: (k) => k.toLowerCase() === "cache-control" ? "private, no-store" : null },
       body: {
         getReader: () => {
@@ -548,5 +548,121 @@ describe("check-availability CLI help and json", () => {
   it("parseArgs help flag", () => {
     const o = parseArgs(["--help"]);
     assert.equal(o.help, true);
+  });
+});
+
+describe("availability review regressions", () => {
+  const nowMs = Date.parse("2026-11-10T00:00:00Z");
+
+  for (const [status, cacheControl, reason] of [
+    [503, "private, no-store", "status"],
+    [200, "public", "no_store_missing"],
+    [302, "private, no-store", "redirect"],
+  ]) {
+    it(`rejects stalled ${status}/${reason} responses without draining`, { timeout: 2000 }, async () => {
+      const server = createServer((_, response) => {
+        response.writeHead(status, { "cache-control": cacheControl });
+        response.write("never-ending response");
+      });
+      const origin = await listen(server);
+      try {
+        const result = await checkAvailability({ origin, nowMs, timeout: 150 });
+        assert.equal(result.reason, reason);
+        assert.equal(result.ok, false);
+      } finally { await close(server); }
+    });
+  }
+
+  it("enforces the deadline when a transport ignores abort", { timeout: 2000 }, async () => {
+    const result = await checkAvailability({ nowMs, timeout: 50, fetchImpl: () => new Promise(() => {}) });
+    assert.equal(result.reason, "timeout");
+  });
+
+  it("enforces the deadline while a body ignores abort", { timeout: 2000 }, async () => {
+    const result = await checkAvailability({
+      nowMs, timeout: 50,
+      fetchImpl: async () => new Response(new ReadableStream({ start() {} }), { headers: { "cache-control": "no-store" } }),
+    });
+    assert.equal(result.reason, "timeout");
+  });
+
+  it("requires an actual no-store directive", async () => {
+    for (const cacheControl of ["x-no-store", 'private="no-store"', "no-store=false"]) {
+      const result = await checkAvailability({
+        nowMs, fetchImpl: async () => Response.json(livePayload(), { headers: { "cache-control": cacheControl } }),
+      });
+      assert.equal(result.reason, "no_store_missing");
+    }
+  });
+
+  it("never echoes invalid envelope fields", async () => {
+    const secret = "PRIVATE_ARBITRARY_RESPONSE_VALUE";
+    for (const payload of [
+      { mode: secret },
+      { mode: "live", data: { status: secret, mode: "live" } },
+      { mode: "live", data: { status: "ok", mode: secret } },
+    ]) {
+      const result = await checkAvailability({
+        nowMs, fetchImpl: async () => Response.json(payload, { headers: { "cache-control": "no-store" } }),
+      });
+      assert.equal(result.ok, false);
+      assert.equal(JSON.stringify(result).includes(secret), false);
+    }
+  });
+
+  it("rejects normalized paths and empty query/fragment delimiters", () => {
+    for (const origin of [
+      "https://example.com/.", "https://example.com/a/..", "https://example.com/%2e",
+      "https://example.com?", "https://example.com#", "http://0.0.0.0",
+    ]) assert.throws(() => validateOrigin(origin));
+  });
+
+  it("fails closed on invalid injected clocks or limits", async () => {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; throw new Error("unexpected"); };
+    for (const values of [{ nowMs: NaN }, { cutoffMs: NaN }, { timeout: 0 }, { bodyLimit: Infinity }]) {
+      const result = await checkAvailability({ nowMs, fetchImpl, ...values });
+      assert.equal(result.ok, false);
+    }
+    assert.equal(calls, 0);
+  });
+
+  it("cannot extend the fixed cutoff through injected options", async () => {
+    let calls = 0;
+    const result = await checkAvailability({
+      nowMs: CUTOFF_MS, cutoffMs: CUTOFF_MS + 86400000,
+      fetchImpl: async () => { calls++; },
+    });
+    assert.equal(result.skipped, true);
+    assert.equal(calls, 0);
+  });
+
+  const script = fileURLToPath(new URL("./check-availability.mjs", import.meta.url));
+  function cli(args, clock = nowMs) {
+    // Freeze only this child process, keeping CLI tests valid after judging ends.
+    const preload = `data:text/javascript,${encodeURIComponent(`Date.now = () => ${clock};`)}`;
+    return spawnSync(process.execPath, ["--import", preload, script, ...args], { encoding: "utf8", timeout: 5000 });
+  }
+
+  it("CLI never echoes userinfo, rejected arguments or malformed origins", () => {
+    const secret = "PRIVATE_CLI_VALUE";
+    for (const args of [
+      [`--origin=https://user:${secret}@example.com`, "--json"],
+      [`--origin=https://user:${secret}@example.com`],
+      [`--unknown=${secret}`],
+    ]) {
+      const result = cli(args);
+      assert.notEqual(result.status, 0);
+      assert.equal(`${result.stdout}${result.stderr}`.includes(secret), false);
+    }
+  });
+
+  it("CLI emits explicit SKIP after cutoff with no network", () => {
+    const result = cli(["--origin=http://127.0.0.1:1", "--json"], CUTOFF_MS);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.skipped, true);
+    assert.equal(output.ok, false);
+    assert.equal(output.reason, "expired");
   });
 });
