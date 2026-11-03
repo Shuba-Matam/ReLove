@@ -14,7 +14,7 @@ export function ImageToggle({ imageUrl, cutoutUrl, title, displayMode }: {
 
   return (
     <div className="space-y-2.5">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[#01071d] ring-1 ring-[#021640]/50">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[#241712] ring-1 ring-[#4a3025]/50">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={title} className="h-full w-full object-contain" />
       </div>
@@ -22,7 +22,7 @@ export function ImageToggle({ imageUrl, cutoutUrl, title, displayMode }: {
         <Button variant={mode === "original" ? "primary" : "secondary"} size="sm" onClick={() => setMode("original")} className="h-7 px-3 text-xs">Original</Button>
         <Button variant={mode === "cutout" ? "primary" : "secondary"} size="sm" onClick={() => setMode("cutout")} className="h-7 px-3 text-xs">Cutout</Button>
       </div>}
-      <p className="text-xs leading-5 text-[#9AA4B8]">{displayMode === "both" && hasCutout ? "Seller chose to show both views. Original is always preserved." : displayMode === "cutout" && hasCutout ? "Seller chose the generated cutout. The original remains preserved." : "Seller chose the original photo."}</p>
+      {displayMode !== "original" && hasCutout && <p className="text-xs leading-5 text-[#bba995]">{displayMode === "both" ? "Two seller-selected views are available." : "Showing the seller-selected cutout."}</p>}
     </div>
   );
 }

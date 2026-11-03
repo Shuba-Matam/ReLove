@@ -1,20 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #020102;
-  --color-card: #01071d;
-  --color-nav: #020102;
-  --color-border-subtle: #021640;
-  --color-border-strong: #03245e;
-  --color-button: #03245e;
-  --color-button-hover: #04307d;
-  --color-sold: #220815;
-  --color-sold-border: #4a102f;
-  --color-text: #F5F5F7;
-  --color-muted: #9AA4B8;
-  --color-link: #82b7ff;
-  --color-link-hover: #93c5fd;
-  --color-focus: #60a5fa;
+  --color-bg: #1a100c;
+  --color-card: #241712;
+  --color-nav: #1a100c;
+  --color-border-subtle: #4a3025;
+  --color-border-strong: #75513e;
+  --color-button: #ead7b7;
+  --color-button-hover: #f3e5ca;
+  --color-sold: #32171a;
+  --color-sold-border: #6b3434;
+  --color-text: #f6ead8;
+  --color-muted: #bba995;
+  --color-link: #ead7b7;
+  --color-link-hover: #fff0d3;
+  --color-focus: #e6c79c;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
@@ -29,8 +29,10 @@ html {
 }
 
 body {
-  background: #020102;
-  color: #F5F5F7;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(117, 81, 62, 0.26), transparent 36rem),
+    #1a100c;
+  color: #f6ead8;
   font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -38,8 +40,8 @@ body {
 }
 
 ::selection {
-  background: #03245e;
-  color: #F5F5F7;
+  background: #ead7b7;
+  color: #241712;
 }
 
 :focus-visible {
@@ -58,9 +60,9 @@ body {
 
 /* scrollbar styling */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #020102; }
-::-webkit-scrollbar-thumb { background: #021640; border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #03245e; }
+::-webkit-scrollbar-track { background: #1a100c; }
+::-webkit-scrollbar-thumb { background: #4a3025; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #ead7b7; }
 
 /* utility helpers */
 .line-clamp-2 {

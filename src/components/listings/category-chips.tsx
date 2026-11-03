@@ -26,8 +26,8 @@ export function CategoryChips({ activeSlug }: { activeSlug?: string | null }) {
             href={href(category.slug)}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]",
-              active ? "bg-[#03245e] text-white" : "bg-[#020102] text-[#9AA4B8] ring-1 ring-[#021640]/60 hover:bg-[#01071d] hover:text-[#F5F5F7] hover:ring-[#03245e]"
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a100c]",
+              active ? "bg-[#ead7b7] text-[#241712]" : "bg-[#1a100c] text-[#bba995] ring-1 ring-[#4a3025]/60 hover:bg-[#241712] hover:text-[#f6ead8] hover:ring-[#ead7b7]"
             )}
           >
             <CategoryIcon name={category.icon} className="size-3.5" aria-hidden="true" />{category.name}

@@ -49,25 +49,25 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
       </div>
 
       <div className="space-y-5">
-        {isDemo && <p className="text-xs font-medium uppercase tracking-widest text-[#9AA4B8]">Sample · not for sale</p>}
-        {listing.status === "hidden" && <p role="status" className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">Hidden pending review — only you can see this.</p>}
-        {listing.status === "sold" && <span className="inline-flex rounded-full bg-[#220815] px-3 py-1 text-xs font-medium text-[#f5c6d8] ring-1 ring-[#4a102f]">Sold — no longer available</span>}
+        {isDemo && <p className="text-xs font-medium uppercase tracking-widest text-[#bba995]">Sample · not for sale</p>}
+        {listing.status === "hidden" && <p role="status" className="rounded-xl bg-[#32171a] p-3 text-sm leading-5 text-[#f1c7bd] ring-1 ring-[#6b3434]">Hidden pending review. Only you can see this.</p>}
+        {listing.status === "sold" && <span className="inline-flex rounded-full bg-[#32171a] px-3 py-1 text-xs font-medium text-[#f1c7bd] ring-1 ring-[#6b3434]">Sold, no longer available</span>}
         <div>
-          <h1 className="text-balance text-xl font-semibold leading-tight tracking-tight text-[#F5F5F7] md:text-[1.6rem]">{listing.title}</h1>
-          <p className="mt-2 text-lg font-semibold tracking-tight text-[#F5F5F7]">{formatPrice(listing.price_inr)}</p>
+          <h1 className="text-balance text-xl font-semibold leading-tight tracking-tight text-[#f6ead8] md:text-[1.6rem]">{listing.title}</h1>
+          <p className="mt-2 text-lg font-semibold tracking-tight text-[#f6ead8]">{formatPrice(listing.price_inr)}</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            <span className="rounded-full bg-[#01071d] px-2.5 py-1 text-xs text-[#cbd5e1] ring-1 ring-[#021640]/50">{CONDITION_LABELS[listing.condition]}</span>
-            <span className="rounded-full bg-[#020102] px-2.5 py-1 text-xs text-[#9AA4B8] ring-1 ring-[#021640]/50">{listing.hostel_block}</span>
-            {listing.category && <span className="rounded-full bg-[#020102] px-2.5 py-1 text-xs text-[#9AA4B8] ring-1 ring-[#021640]/50">{listing.category.name}</span>}
+            <span className="rounded-full bg-[#241712] px-2.5 py-1 text-xs text-[#e1d2c0] ring-1 ring-[#4a3025]/50">{CONDITION_LABELS[listing.condition]}</span>
+            <span className="rounded-full bg-[#1a100c] px-2.5 py-1 text-xs text-[#bba995] ring-1 ring-[#4a3025]/50">{listing.hostel_block}</span>
+            {listing.category && <span className="rounded-full bg-[#1a100c] px-2.5 py-1 text-xs text-[#bba995] ring-1 ring-[#4a3025]/50">{listing.category.name}</span>}
           </div>
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-xs font-medium uppercase tracking-widest text-[#9AA4B8]">Details</h2>
-          <p className="whitespace-pre-wrap text-sm leading-6 text-[#cbd5e1]">{listing.description}</p>
+          <h2 className="text-xs font-medium uppercase tracking-widest text-[#bba995]">Details</h2>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-[#e1d2c0]">{listing.description}</p>
           {listing.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {listing.tags.map((t) => <span key={t} className="rounded-full bg-[#020102] px-2.5 py-1 text-xs text-[#9AA4B8] ring-1 ring-[#021640]/40">#{t}</span>)}
+              {listing.tags.map((t) => <span key={t} className="rounded-full bg-[#1a100c] px-2.5 py-1 text-xs text-[#bba995] ring-1 ring-[#4a3025]/40">#{t}</span>)}
             </div>
           )}
         </div>
@@ -75,10 +75,10 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
         {listing.seller && (
           <div className="flex items-center gap-3 py-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {listing.seller.avatar_url ? <img src={listing.seller.avatar_url} alt={`${listing.seller.display_name} avatar`} className="size-9 rounded-full object-cover ring-1 ring-[#021640]/60" /> : <span className="flex size-9 items-center justify-center rounded-full bg-[#01071d] text-sm font-medium text-[#F5F5F7] ring-1 ring-[#021640]">{listing.seller.display_name.slice(0,1).toUpperCase()}</span>}
+            {listing.seller.avatar_url ? <img src={listing.seller.avatar_url} alt={`${listing.seller.display_name} avatar`} className="size-9 rounded-full object-cover ring-1 ring-[#4a3025]/60" /> : <span className="flex size-9 items-center justify-center rounded-full bg-[#241712] text-sm font-medium text-[#f6ead8] ring-1 ring-[#4a3025]">{listing.seller.display_name.slice(0,1).toUpperCase()}</span>}
             <div>
-              <p className="text-sm font-medium text-[#F5F5F7]">{listing.seller.display_name}</p>
-              <p className="text-xs text-[#9AA4B8]">{listing.seller.hostel_block ?? "Hostel not set"}</p>
+              <p className="text-sm font-medium text-[#f6ead8]">{listing.seller.display_name}</p>
+              <p className="text-xs text-[#bba995]">{listing.seller.hostel_block ?? "Hostel Block / Apartment Name not set"}</p>
             </div>
           </div>
         )}
@@ -93,7 +93,7 @@ export function ListingDetailClient({ listing, mode }: { listing: Listing; mode:
           )}
           <Button variant="destructive" size="sm" onClick={() => setReportOpen(true)}><Flag className="size-3.5" /> Report</Button>
         </div>
-        {contactError && <p role="alert" className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">{contactError} {isDemo && <Link href="/login" className="underline text-[#82b7ff] underline-offset-4">Sign in</Link>}</p>}
+        {contactError && <p role="alert" className="rounded-xl bg-[#32171a] p-3 text-sm leading-5 text-[#f1c7bd] ring-1 ring-[#6b3434]">{contactError} {isDemo && <Link href="/login" className="underline text-[#ead7b7] underline-offset-4">Sign in</Link>}</p>}
 
         {isOwner && (
           <div className="flex gap-2 pt-1">

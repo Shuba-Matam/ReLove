@@ -31,11 +31,11 @@ function Feed({ query }: { query: string }) {
     setLoadingMore(false);
   }
   return <section className="space-y-4" aria-label="Marketplace listings">
-    {error && <div role="alert" className="rounded-xl bg-[#220815] p-4 ring-1 ring-[#4a102f]"><p className="text-sm leading-5 text-[#f5c6d8]">{error}</p><Button variant="secondary" size="sm" className="mt-3" onClick={() => setRetry((value) => value + 1)}>Try again</Button></div>}
+    {error && <div role="alert" className="rounded-xl bg-[#32171a] p-4 ring-1 ring-[#6b3434]"><p className="text-sm leading-5 text-[#f1c7bd]">{error}</p><Button variant="secondary" size="sm" className="mt-3" onClick={() => setRetry((value) => value + 1)}>Try again</Button></div>}
     {!result && !error && <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4" aria-label="Loading listings">{Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="aspect-[4/3] rounded-xl" />)}</div>}
-    {result?.mode === "demo" && <p className="text-xs text-[#9AA4B8]">Samples — browse to explore, not for sale.</p>}
-    {result && <div className="flex items-baseline justify-between gap-4"><h2 className="text-[14px] font-medium tracking-tight text-[#F5F5F7]">{query ? "Results" : "Latest on campus"}</h2><p className="text-xs text-[#9AA4B8]">{result.meta?.total ?? result.data.length} items</p></div>}
-    {result && result.data.length === 0 && <div className="py-12 text-center"><h3 className="text-sm font-medium text-[#F5F5F7]">No matches</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-[#9AA4B8]">Try fewer filters or clear search.</p><Button asChild variant="secondary" size="sm" className="mt-4"><Link href="/">Clear filters</Link></Button></div>}
+    {result?.mode === "demo" && <p className="text-xs text-[#bba995]">Samples are for browsing only, not for sale.</p>}
+    {result && <div className="flex items-baseline justify-between gap-4"><h2 className="text-[14px] font-medium tracking-tight text-[#f6ead8]">{query ? "Results" : "Latest on campus"}</h2><p className="text-xs text-[#bba995]">{result.meta?.total ?? result.data.length} items</p></div>}
+    {result && result.data.length === 0 && <div className="py-12 text-center"><h3 className="text-sm font-medium text-[#f6ead8]">No matches</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-[#bba995]">Try fewer filters or clear search.</p><Button asChild variant="secondary" size="sm" className="mt-4"><Link href="/">Clear filters</Link></Button></div>}
     {result && <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">{result.data.map((listing) => <ListingCard key={listing.id} listing={listing} />)}</div>}
     {result?.meta?.next_cursor != null && <div className="flex justify-center pt-2"><Button variant="secondary" size="sm" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "Load more"}</Button></div>}
   </section>;

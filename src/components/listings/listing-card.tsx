@@ -9,9 +9,9 @@ export function ListingCard({ listing }: { listing: Listing }) {
   return (
     <Link
       href={`/listings/${listing.id}`}
-      className="group flex flex-col overflow-hidden rounded-xl bg-[#020102] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]"
+      className="group flex flex-col overflow-hidden rounded-xl bg-[#1a100c] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a100c]"
     >
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[#01071d] ring-1 ring-[#021640]/60 group-hover:ring-[#03245e]">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[#241712] ring-1 ring-[#4a3025]/60 group-hover:ring-[#ead7b7]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={coverUrl || "/demo/books.svg"}
@@ -20,18 +20,18 @@ export function ListingCard({ listing }: { listing: Listing }) {
           loading="lazy"
         />
         {sold && (
-          <span className="absolute left-2 top-2 rounded-full bg-[#220815] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white ring-1 ring-[#4a102f]">Sold</span>
+          <span className="absolute left-2 top-2 rounded-full bg-[#32171a] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white ring-1 ring-[#6b3434]">Sold</span>
         )}
         {listing.status === "hidden" && (
-          <span className="absolute left-2 top-2 rounded-full bg-[#220815] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white ring-1 ring-[#4a102f]">Hidden</span>
+          <span className="absolute left-2 top-2 rounded-full bg-[#32171a] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white ring-1 ring-[#6b3434]">Hidden</span>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 px-1 pt-2.5 pb-1">
-        <p className="line-clamp-2 text-[13px] font-medium leading-snug tracking-tight text-[#F5F5F7]">{listing.title}</p>
-        <p className="text-[13px] font-semibold tracking-tight text-[#F5F5F7]">{formatPrice(listing.price_inr)}</p>
+        <p className="line-clamp-2 text-[13px] font-medium leading-snug tracking-tight text-[#f6ead8]">{listing.title}</p>
+        <p className="text-[13px] font-semibold tracking-tight text-[#f6ead8]">{formatPrice(listing.price_inr)}</p>
         <div className="mt-1 flex flex-wrap items-center gap-1">
-          <span className="rounded-full bg-[#01071d] px-2 py-1 text-[11px] leading-none text-[#9AA4B8] ring-1 ring-[#021640]/60">{CONDITION_LABELS[listing.condition] ?? listing.condition}</span>
-          <span className="max-w-[110px] truncate rounded-full bg-[#020102] px-2 py-1 text-[11px] leading-none text-[#9AA4B8] ring-1 ring-[#021640]/50">{listing.hostel_block}</span>
+          <span className="rounded-full bg-[#241712] px-2 py-1 text-[11px] leading-none text-[#bba995] ring-1 ring-[#4a3025]/60">{CONDITION_LABELS[listing.condition] ?? listing.condition}</span>
+          <span className="max-w-[110px] truncate rounded-full bg-[#1a100c] px-2 py-1 text-[11px] leading-none text-[#bba995] ring-1 ring-[#4a3025]/50">{listing.hostel_block}</span>
         </div>
       </div>
     </Link>

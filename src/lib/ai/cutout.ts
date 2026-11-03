@@ -91,10 +91,20 @@ export async function makeCutout(input: { original: Buffer; prompt: string; key:
     const { left, top, right, bottom } = record.bounds;
     if (![left, top, right, bottom].every(Number.isInteger) || left < 0 || top < 0 || right > width || bottom > height || right <= left || bottom <= top) continue;
     const raster = decodeMaskToRaster(record.mask);
-    const patch = await sharp(Buffer.from(raster.map((value) => value ? 255 : 0)), { raw: { width: record.mask.width, height: record.mask.height, channels: 1 } })
-      .resize(right - left, bottom - top, { kernel: "nearest" }).raw().toBuffer();
+    const patchWidth = right - left;
+    const patchHeight = bottom - top;
+    const { data: patch, info: patchInfo } = await sharp(Buffer.from(raster.map((value) => value ? 255 : 0)), {
+      raw: { width: record.mask.width, height: record.mask.height, channels: 1 },
+    })
+      .resize(patchWidth, patchHeight, { kernel: "nearest" })
+      .extractChannel(0)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (patchInfo.channels !== 1 || patch.length !== patchWidth * patchHeight) {
+      throw new AiFailure("MASK_INVALID", "The cutout mask did not match the photo.");
+    }
     const full = Buffer.alloc(width * height);
-    for (let row = 0; row < bottom - top; row++) patch.copy(full, (top + row) * width + left, row * (right - left), (row + 1) * (right - left));
+    for (let row = 0; row < patchHeight; row++) patch.copy(full, (top + row) * width + left, row * patchWidth, (row + 1) * patchWidth);
     const check = checkMask(full, width, height);
     if (check.valid) candidates.push({ pixels: full, area: check.coverage });
   }

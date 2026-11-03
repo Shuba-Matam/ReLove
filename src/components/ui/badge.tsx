@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 const badgeVariants = cva("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium leading-none tracking-wide transition ring-1", {
   variants: {
     variant: {
-      default: "ring-[#021640]/60 bg-[#020102] text-[#9AA4B8]",
-      sold: "ring-[#4a102f] bg-[#220815] text-[#f5c6d8]",
-      condition: "ring-[#021640]/50 bg-[#01071d] text-[#cbd5e1]",
-      outline: "text-[#9AA4B8] ring-[#021640]/60 bg-transparent",
+      default: "ring-[#4a3025]/60 bg-[#1a100c] text-[#bba995]",
+      sold: "ring-[#6b3434] bg-[#32171a] text-[#f1c7bd]",
+      condition: "ring-[#4a3025]/50 bg-[#241712] text-[#e1d2c0]",
+      outline: "text-[#bba995] ring-[#4a3025]/60 bg-transparent",
     },
   },
   defaultVariants: { variant: "default" },

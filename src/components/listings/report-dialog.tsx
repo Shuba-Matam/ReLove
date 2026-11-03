@@ -47,7 +47,7 @@ export function ReportDialog({ listingId, open, onOpenChange }: { listingId: str
           <DialogDescription>Help keep the marketplace safe. Reports are reviewed by moderators.</DialogDescription>
         </DialogHeader>
         {status === "success" ? (
-          <div className="rounded-lg border border-[#03245e] bg-[#021640] p-4 text-sm text-[#F5F5F7]">{msg}</div>
+          <div className="rounded-lg border border-[#ead7b7] bg-[#4a3025] p-4 text-sm text-[#f6ead8]">{msg}</div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <div>
@@ -62,7 +62,7 @@ export function ReportDialog({ listingId, open, onOpenChange }: { listingId: str
             <div>
               <Label htmlFor="report-details">Details (optional)</Label>
               <Textarea id="report-details" placeholder="Add context…" value={details} onChange={(e) => setDetails(e.target.value)} maxLength={1000} className="mt-1" />
-              <p className="mt-1 text-xs text-[#9AA4B8]">{details.length}/1000</p>
+              <p className="mt-1 text-xs text-[#bba995]">{details.length}/1000</p>
             </div>
             {status === "error" && <p className="text-sm text-red-400" role="alert">{msg}</p>}
             <div className="flex gap-2">

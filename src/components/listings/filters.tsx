@@ -48,18 +48,18 @@ function FilterForm() {
       <div className="flex flex-wrap gap-2">
         <div className="min-w-[180px] flex-1">
           <Label htmlFor="f-q" className="sr-only">Search</Label>
-          <Input id="f-q" placeholder="Search title or description" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 bg-[#020102]" />
+          <Input id="f-q" placeholder="Search title or description" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 bg-[#1a100c]" />
         </div>
-        <Select id="f-condition" value={condition} onChange={(e) => setCondition(e.target.value)} className="h-9 w-auto min-w-[140px] bg-[#020102]" aria-label="Condition">
+        <Select id="f-condition" value={condition} onChange={(e) => setCondition(e.target.value)} className="h-9 w-auto min-w-[140px] bg-[#1a100c]" aria-label="Condition">
           <option value="">Any condition</option>
           {CONDITIONS.map((c) => (
             <option key={c} value={c}>{CONDITION_LABELS[c]}</option>
           ))}
         </Select>
-        <Input id="f-block" placeholder="Hostel block" value={block} onChange={(e) => setBlock(e.target.value)} className="h-9 w-auto min-w-[130px] flex-1 sm:flex-none bg-[#020102]" aria-label="Hostel block" />
-        <Input id="f-min" type="number" min={0} placeholder="Min ₹" value={min} onChange={(e) => setMin(e.target.value)} className="h-9 w-[88px] bg-[#020102]" aria-label="Min price" />
-        <Input id="f-max" type="number" min={0} placeholder="Max ₹" value={max} onChange={(e) => setMax(e.target.value)} className="h-9 w-[88px] bg-[#020102]" aria-label="Max price" />
-        <Select id="f-sort" value={sort} onChange={(e) => setSort(e.target.value)} className="h-9 w-auto min-w-[150px] bg-[#020102]" aria-label="Sort">
+        <Input id="f-block" placeholder="Hostel Block / Apartment Name" value={block} onChange={(e) => setBlock(e.target.value)} className="h-9 w-auto min-w-[190px] flex-1 sm:flex-none bg-[#1a100c]" aria-label="Hostel Block / Apartment Name" />
+        <Input id="f-min" type="number" min={0} placeholder="Min ₹" value={min} onChange={(e) => setMin(e.target.value)} className="h-9 w-[88px] bg-[#1a100c]" aria-label="Min price" />
+        <Input id="f-max" type="number" min={0} placeholder="Max ₹" value={max} onChange={(e) => setMax(e.target.value)} className="h-9 w-[88px] bg-[#1a100c]" aria-label="Max price" />
+        <Select id="f-sort" value={sort} onChange={(e) => setSort(e.target.value)} className="h-9 w-auto min-w-[150px] bg-[#1a100c]" aria-label="Sort">
           <option value="newest">Newest</option>
           <option value="price_asc">Price: low→high</option>
           <option value="price_desc">Price: high→low</option>

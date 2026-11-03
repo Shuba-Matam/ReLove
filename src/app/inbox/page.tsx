@@ -37,9 +37,9 @@ export default function InboxPage() {
 
   if (isDemo) {
     return (
-      <div className="mx-auto max-w-2xl rounded-xl bg-[#220815] p-8 text-center ring-1 ring-[#4a102f]">
-        <h1 className="text-base font-semibold text-[#F5F5F7]">Inbox — demo</h1>
-        <p className="mt-2 text-sm text-[#f5c6d8]">Messaging is read-only in demo. Sign in to send and receive.</p>
+      <div className="mx-auto max-w-2xl rounded-xl bg-[#32171a] p-8 text-center ring-1 ring-[#6b3434]">
+        <h1 className="text-base font-semibold text-[#f6ead8]">Inbox demo</h1>
+        <p className="mt-2 text-sm text-[#f1c7bd]">Messaging is read-only in demo. Sign in to send and receive.</p>
         <Button asChild variant="primary" size="sm" className="mt-4"><Link href="/login">Sign in with Google</Link></Button>
       </div>
     );
@@ -47,8 +47,8 @@ export default function InboxPage() {
 
   if (!session?.user && !loading) {
     return (
-      <div className="mx-auto max-w-2xl rounded-xl bg-[#020102] p-8 text-center ring-1 ring-[#021640]/50">
-        <h1 className="font-medium text-[#F5F5F7]">Sign in to view messages</h1>
+      <div className="mx-auto max-w-2xl rounded-xl bg-[#1a100c] p-8 text-center ring-1 ring-[#4a3025]/50">
+        <h1 className="font-medium text-[#f6ead8]">Sign in to view messages</h1>
         <Button asChild variant="primary" size="sm" className="mt-4"><Link href="/login">Sign in</Link></Button>
       </div>
     );
@@ -57,25 +57,25 @@ export default function InboxPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="pb-2">
-        <h1 className="text-xl font-semibold tracking-tight text-[#F5F5F7]">Inbox</h1>
-        <p className="mt-1 text-sm text-[#9AA4B8]">Conversations about your listings.</p>
+        <h1 className="text-xl font-semibold tracking-tight text-[#f6ead8]">Inbox</h1>
+        <p className="mt-1 text-sm text-[#bba995]">Conversations about your listings.</p>
       </div>
-      {loading && <p className="text-sm text-[#9AA4B8]">Loading conversations…</p>}
-      {error && <p role="alert" className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">{error}</p>}
-      {threads && threads.length === 0 && <div className="py-10 text-center text-sm leading-6 text-[#9AA4B8]">No conversations yet. Visit a listing and tap “Message seller”.</div>}
+      {loading && <p className="text-sm text-[#bba995]">Loading conversations…</p>}
+      {error && <p role="alert" className="rounded-xl bg-[#32171a] p-3 text-sm leading-5 text-[#f1c7bd] ring-1 ring-[#6b3434]">{error}</p>}
+      {threads && threads.length === 0 && <div className="py-10 text-center text-sm leading-6 text-[#bba995]">No conversations yet. Visit a listing and tap “Message seller”.</div>}
       {threads && threads.length > 0 && (
         <div className="space-y-2">
           {threads.map((t) => (
-            <Link key={t.id} href={`/inbox/${t.id}`} className="flex items-center gap-3 rounded-xl bg-[#020102] p-3 ring-1 ring-[#021640]/50 transition hover:ring-[#03245e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa] focus-visible:ring-offset-2 focus-visible:ring-offset-[#020102]">
+            <Link key={t.id} href={`/inbox/${t.id}`} className="flex items-center gap-3 rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50 transition hover:ring-[#ead7b7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a100c]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={t.listing.image_url} alt={t.listing.title} className="size-12 rounded-lg object-cover ring-1 ring-[#021640]/40" />
+              <img src={t.listing.image_url} alt={t.listing.title} className="size-12 rounded-lg object-cover ring-1 ring-[#4a3025]/40" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-[#F5F5F7]">{t.listing.title} — {t.participant.display_name}</p>
-                <p className="truncate text-xs leading-5 text-[#9AA4B8]">{t.last_message?.body ?? "No messages yet"}</p>
+                <p className="truncate text-sm font-medium text-[#f6ead8]">{t.listing.title} · {t.participant.display_name}</p>
+                <p className="truncate text-xs leading-5 text-[#bba995]">{t.last_message?.body ?? "No messages yet"}</p>
               </div>
               <div className="shrink-0 text-right">
-                {t.unread_count > 0 && <span className="inline-flex size-5 items-center justify-center rounded-full bg-[#03245e] text-xs font-medium text-white">{t.unread_count}</span>}
-                <p className="mt-1 text-[11px] text-[#9AA4B8]">{new Date(t.updated_at).toLocaleDateString()}</p>
+                {t.unread_count > 0 && <span className="inline-flex size-5 items-center justify-center rounded-full bg-[#ead7b7] text-xs font-medium text-[#241712]">{t.unread_count}</span>}
+                <p className="mt-1 text-[11px] text-[#bba995]">{new Date(t.updated_at).toLocaleDateString()}</p>
               </div>
             </Link>
           ))}

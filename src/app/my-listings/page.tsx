@@ -32,7 +32,7 @@ export default function MyListingsPage() {
 
   async function doAction(){
     if(!confirm) return;
-    if(isDemo){ setError("Demo mode — actions are disabled. Sign in to manage listings."); setConfirm(null); return; }
+    if(isDemo){ setError("Demo mode actions are disabled. Sign in to manage listings."); setConfirm(null); return; }
     try{
       if(confirm.action==="delete"){
         const res = await fetch(`/api/listings/${confirm.id}`, { method:"DELETE"});
@@ -49,24 +49,24 @@ export default function MyListingsPage() {
   }
 
   if(!session?.user && !loading){
-    return <div className="mx-auto max-w-lg rounded-xl bg-[#020102] p-8 text-center ring-1 ring-[#021640]/50"><p className="text-sm text-[#9AA4B8]">Sign in to manage your listings.</p><Button asChild variant="primary" size="sm" className="mt-4"><Link href="/login">Sign in</Link></Button></div>;
+    return <div className="mx-auto max-w-lg rounded-xl bg-[#1a100c] p-8 text-center ring-1 ring-[#4a3025]/50"><p className="text-sm text-[#bba995]">Sign in to manage your listings.</p><Button asChild variant="primary" size="sm" className="mt-4"><Link href="/login">Sign in</Link></Button></div>;
   }
 
   return (
     <div className="space-y-4">
       <div className="pb-2">
-        <h1 className="text-xl font-semibold tracking-tight text-[#F5F5F7]">My listings</h1>
-        <p className="mt-1 text-sm text-[#9AA4B8]">Active, sold and hidden.</p>
+        <h1 className="text-xl font-semibold tracking-tight text-[#f6ead8]">My listings</h1>
+        <p className="mt-1 text-sm text-[#bba995]">Active, sold and hidden.</p>
       </div>
-      {isDemo && <div className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">Demo mode — actions disabled.</div>}
+      {isDemo && <div className="rounded-xl bg-[#32171a] p-3 text-sm leading-5 text-[#f1c7bd] ring-1 ring-[#6b3434]">Demo mode actions are disabled.</div>}
       <div className="flex gap-1.5">
         {(["active","sold","hidden"] as Tab[]).map((t)=>
           <Button key={t} variant={tab===t?"primary":"secondary"} size="sm" onClick={()=>{setLoading(true);setError("");setListings(null);setTab(t);}} className="capitalize">{t}</Button>
         )}
       </div>
-      {loading && <p className="text-sm text-[#9AA4B8]">Loading…</p>}
-      {error && <p role="alert" className="rounded-xl bg-[#220815] p-3 text-sm leading-5 text-[#f5c6d8] ring-1 ring-[#4a102f]">{error}</p>}
-      {listings && listings.length===0 && <div className="py-8 text-center text-sm text-[#9AA4B8]">No {tab} listings.</div>}
+      {loading && <p className="text-sm text-[#bba995]">Loading…</p>}
+      {error && <p role="alert" className="rounded-xl bg-[#32171a] p-3 text-sm leading-5 text-[#f1c7bd] ring-1 ring-[#6b3434]">{error}</p>}
+      {listings && listings.length===0 && <div className="py-8 text-center text-sm text-[#bba995]">No {tab} listings.</div>}
       {listings && listings.length>0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-3">
           {listings.map((l)=>(

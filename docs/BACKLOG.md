@@ -13,3 +13,9 @@ Owner requested postponement while Phase 2 AI features are brought live.
 
 - Current cutout flow intentionally accepts exactly one clear mask and produces one derived listing image.
 - Multi-item extraction, choosing among several detected objects, and publishing multiple cutouts from one original are not implemented in this change.
+
+## Multiple listing photos - later phase
+
+- The current listing, validation, storage ownership, cleanup, cutout, and display contracts all reference one source image.
+- Supporting multiple photos safely needs an approved schema change, per-image storage ownership and orphan cleanup, upload limits, ordering, edit behavior, and listing gallery UI.
+- Keep the current single-photo flow until that end-to-end contract is designed and migrated; this is not a safe small UI-only addition.

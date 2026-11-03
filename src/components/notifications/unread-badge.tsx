@@ -17,7 +17,7 @@ export function UnreadBadge({
   return (
     <span
       className={cn(
-        "inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#03245e] px-1.5 text-[11px] font-semibold leading-none text-white ring-1 ring-[#021640] transition",
+        "inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#ead7b7] px-1.5 text-[11px] font-semibold leading-none text-[#241712] ring-1 ring-[#4a3025] transition",
         // Ensure visible on dark palette
         className
       )}
@@ -32,7 +32,7 @@ export function UnreadDot({ count, className }: { count: number; className?: str
   if (!count || count <= 0) return null;
   return (
     <span
-      className={cn("absolute -right-1 -top-1 inline-flex size-2.5 items-center justify-center rounded-full bg-[#60a5fa] ring-2 ring-[#020102]", className)}
+      className={cn("absolute -right-1 -top-1 inline-flex size-2.5 items-center justify-center rounded-full bg-[#e6c79c] ring-2 ring-[#1a100c]", className)}
       aria-hidden="true"
     />
   );
