@@ -23,7 +23,7 @@ type ThreadRow = {
 function toThreadSummary(row: ThreadRow, currentUserId: string, lastMessage: { body: string; created_at: string; sender_id: string } | null, unreadCount: number): ThreadSummary {
   const isBuyer = row.buyer_id === currentUserId;
   const other = isBuyer ? row.seller : row.buyer;
-  const listing = row.listing ?? { id: row.listing_id, title:"Listing unavailable",image_url:"/icons/icon.svg",price_inr:0,status:"hidden" };
+  const listing = row.listing ?? { id: row.listing_id, title:"Listing unavailable",image_url:"/icons/icon-192.png",price_inr:0,status:"hidden" };
   return {
     id: row.id,
     listing: {

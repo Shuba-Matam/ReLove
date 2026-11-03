@@ -17,8 +17,8 @@ for (const [name, [bg, floor, item]] of Object.entries(designs)) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Illustration of ${name}"><rect width="640" height="480" fill="${bg}"/><circle cx="548" cy="40" r="185" fill="#fff" opacity=".22"/><path d="M0 353q320-42 640 0v127H0z" fill="${floor}" opacity=".45"/><ellipse cx="321" cy="405" rx="178" ry="25" fill="#273940" opacity=".10"/>${item}</svg>`;
   await writeFile(`public/demo/${name}.svg`, svg);
 }
-const icon = await readFile("public/icons/icon.svg");
-for (const size of [192, 512]) await sharp(icon).resize(size, size).png().toFile(`public/icons/icon-${size}.png`);
-await sharp(icon).resize(384, 384).extend({ top: 64, bottom: 64, left: 64, right: 64, background: "#01071d" }).png().toFile("public/icons/maskable-512.png");
-await sharp(icon).resize(180, 180).png().toFile("public/icons/apple-touch-icon.png");
+const icon = await readFile("public/brand/re-love-logo.webp");
+for (const size of [192, 512]) await sharp(icon).resize(size, size, { fit: "contain" }).png({ compressionLevel: 9, palette: true, quality: 92 }).toFile(`public/icons/icon-${size}.png`);
+await sharp(icon).resize(512, 512, { fit: "contain" }).png({ compressionLevel: 9, palette: true, quality: 92 }).toFile("public/icons/maskable-512.png");
+await sharp(icon).resize(180, 180, { fit: "contain" }).png({ compressionLevel: 9, palette: true, quality: 92 }).toFile("public/icons/apple-touch-icon.png");
 console.log("Created 8 original sample illustrations and app icons.");

@@ -211,17 +211,15 @@ function createDemoStub({ healthOverride, sessionOverride, htmlRedirect, listing
         "cache-control": "no-cache, no-store",
       });
       // must contain relove-shell
-      res.end(`// relove-shell v1\nself.addEventListener('fetch', e=>{});`);
+      res.end(`// relove-shell-v2\nself.addEventListener('fetch', e=>{});`);
       return;
     }
     if (pathname.startsWith("/icons/")) {
       // handle 5 expected icons
-      const goodIcons = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/icon.svg", "/icons/apple-touch-icon.png"];
+      const goodIcons = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
       if (goodIcons.includes(pathname)) {
-        const ct = pathname.endsWith(".svg") ? "image/svg+xml" : "image/png";
-        res.writeHead(200, { "content-type": ct, "cache-control": "public, max-age=86400" });
-        // minimal png/svg bytes
-        res.end(ct.includes("svg") ? "<svg xmlns='http://www.w3.org/2000/svg'></svg>" : Buffer.alloc(200));
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" });
+        res.end(Buffer.alloc(200));
         return;
       }
       res.writeHead(404);

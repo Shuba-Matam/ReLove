@@ -127,7 +127,7 @@ export const GET = withApi(async () => {
       const isBuyer = t.buyer_id === user.id;
       const participantName = isBuyer ? (t.seller?.display_name ?? "Unknown") : (t.buyer?.display_name ?? "Unknown");
       const listingTitle = t.listing?.title ?? "Listing";
-      const listingImageUrl = t.listing?.image_url ?? "/icons/icon.svg";
+      const listingImageUrl = t.listing?.image_url ?? "/icons/icon-192.png";
       return {
         id: m.id,
         threadId: m.thread_id,

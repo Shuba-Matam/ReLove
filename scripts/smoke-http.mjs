@@ -617,21 +617,21 @@ async function runSmoke(opts) {
       if (!cc.toLowerCase().includes("no-cache")) warn("sw.js Cache-Control should be no-cache,no-store per next.config headers");
       const ct = headers.get("content-type") || "";
       if (!ct.toLowerCase().includes("javascript") && !ct.toLowerCase().includes("application")) warn(`sw.js content-type ${ct} unexpected`);
-      if (!body.text.includes("relove-shell")) warn("sw.js missing CACHE relove-shell marker");
+      if (!body.text.includes("relove-shell-v2")) warn("sw.js missing current CACHE relove-shell-v2 marker");
       const cl = headers.get("content-length");
       if (cl && Number(cl) > 20000) warn("sw.js unexpectedly large — ensure network-only for APIs/auth per public/sw.js");
     },
   ]);
 
   // icons
-  const icons = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/icon.svg", "/icons/apple-touch-icon.png"];
+  const icons = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
   for (const ic of icons) {
     // some icons may not exist in skeleton (apple-touch-icon optional) — treat missing as warn not fail if expect demo and not critical
-    const res = await getAndAssert(ic, [200, 404], "pwa.icon", [
+    await getAndAssert(ic, 200, "pwa.icon", [
       ({ headers, status }) => {
         if (status === 200) {
           const ct = headers.get("content-type") || "";
-          if (!ct.toLowerCase().includes("image/") && !ct.toLowerCase().includes("svg")) warn(`${ic} content-type ${ct} not image`);
+          if (!ct.toLowerCase().includes("image/png")) warn(`${ic} content-type ${ct} expected image/png`);
         } else {
           warn(`${ic} missing (404) — expected PWA icons per src/app/manifest.ts`);
         }

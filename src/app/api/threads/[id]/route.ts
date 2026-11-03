@@ -107,7 +107,7 @@ export const GET = withApi(async (request: NextRequest, context: unknown) => {
   const last = messages.length > 0 ? messages[messages.length - 1] : null;
   const unread = messages.filter((m) => m.recipient_id === user.id && m.read_at === null).length;
 
-  const visibleListing = t.listing ?? { id:t.listing_id,title:"Listing unavailable",image_url:"/icons/icon.svg",price_inr:0,status:"hidden" };
+  const visibleListing = t.listing ?? { id:t.listing_id,title:"Listing unavailable",image_url:"/icons/icon-192.png",price_inr:0,status:"hidden" };
   const summary: ThreadSummary = {
     id: t.id,
     listing: {

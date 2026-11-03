@@ -44,7 +44,7 @@ function msg(overrides: Partial<{ id: string; threadId: string; createdAt: strin
     threadId: overrides.threadId ?? threadId,
     createdAt: overrides.createdAt ?? "2026-11-03T00:00:00.000Z",
     listingTitle: "Chair",
-    listingImageUrl: "/icons/icon.svg",
+    listingImageUrl: "/icons/icon-192.png",
     participantName: "Bob",
   };
 }
@@ -134,7 +134,7 @@ describe("isValidPushEndpoint — strict allowlist", () => {
 
 describe("notificationSummarySchema / parseNotificationSummary", () => {
   it("parses valid summary, rejects invalid", () => {
-    const good = { unreadCount: 2, messages: [{ id: msgId1, threadId, createdAt: "2026-11-03T00:00:00.000Z", listingTitle: "Chair", listingImageUrl: "/icons/icon.svg", participantName: "Bob" }] };
+    const good = { unreadCount: 2, messages: [{ id: msgId1, threadId, createdAt: "2026-11-03T00:00:00.000Z", listingTitle: "Chair", listingImageUrl: "/icons/icon-192.png", participantName: "Bob" }] };
     expect(parseNotificationSummary(good)).not.toBeNull();
     expect(parseNotificationSummary({ unreadCount: -1, messages: [] })).toBeNull();
     expect(parseNotificationSummary({ unreadCount: 1, messages: [{ id: "bad", threadId, createdAt: "2026-11-03T00:00:00.000Z", listingTitle: "x", listingImageUrl: "/i", participantName: "Bob" }] })).toBeNull();
