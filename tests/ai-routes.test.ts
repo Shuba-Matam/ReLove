@@ -528,7 +528,7 @@ describe("actual production guard+meter+cache via PGlite service_role (no duplic
 });
 
 describe("real draft POST via production route (cap429, payment503, timeout503, sanitized)", () => {
-  it("allowed Meta draft counts exact system/user/image input then generates with the 1200-token ceiling", async () => {
+  it("allowed Meta draft counts exact input then generates with minimal reasoning inside the 1200-token ceiling", async () => {
     const imagePath = `${seller}/${randomUUID()}.jpg`;
     const image = await seedImage(seller, imagePath);
     const { requireUser } = await import("@/lib/server/auth");
@@ -565,7 +565,9 @@ describe("real draft POST via production route (cap429, payment503, timeout503, 
       const generationCall = fetchSpy.mock.calls[1] as unknown as [string, RequestInit];
       const generationBody = JSON.parse(generationCall[1].body as string);
       expect(generationCall[0]).toBe("https://api.meta.ai/v1/chat/completions");
-      expect(generationBody.max_tokens).toBe(1200);
+      expect(generationBody.max_completion_tokens).toBe(1200);
+      expect(generationBody.reasoning_effort).toBe("minimal");
+      expect(generationBody).not.toHaveProperty("max_tokens");
       expect(generationBody.messages).toEqual([
         { role: "system", content: DRAFT_PROMPT },
         { role: "user", content: [

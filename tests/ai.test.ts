@@ -206,9 +206,21 @@ describe("provider hardening — low-funds, nonretryable, bounded sizes, draft p
   });
   it("draft provider selection retains Baseten compatibility and Meta uses fixed api.meta.ai with allowlisted model", async () => {
     const originalFetch = globalThis.fetch;
-    const mocked = vi.fn(async (url: string) => url.endsWith("/responses/input_tokens")
-      ? new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 1 }), { status: 200, headers: { "content-type": "application/json" } })
-      : new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(draft) } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+    const mocked = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("inference.baseten.co")) {
+        return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(draft) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("/responses/input_tokens")) {
+        return new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 1 }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const reservesBudgetForVisibleJson = body.max_completion_tokens === 1200 && body.reasoning_effort === "minimal" && !("max_tokens" in body);
+      return new Response(JSON.stringify({
+        choices: [reservesBudgetForVisibleJson
+          ? { finish_reason: "stop", message: { content: JSON.stringify(draft) } }
+          : { finish_reason: "length", message: { content: null } }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
     globalThis.fetch = mocked as unknown as typeof fetch;
     vi.stubEnv("AI_DRAFT_PROVIDER", "baseten");
     vi.stubEnv("BASETEN_MODEL", "meta-models/muse-spark-open-1026");
@@ -226,7 +238,9 @@ describe("provider hardening — low-funds, nonretryable, bounded sizes, draft p
     const call = mocked.mock.calls[1] as unknown as [string, RequestInit];
     const body = JSON.parse((call[1].body as string) ?? "{}");
     expect(body.model).toBe("muse-spark-1.3");
-    expect(body.max_tokens).toBe(1200);
+    expect(body.max_completion_tokens).toBe(1200);
+    expect(body.reasoning_effort).toBe("minimal");
+    expect(body).not.toHaveProperty("max_tokens");
     vi.stubEnv("META_MODEL", "Llama-4-Maverick-17B-128E-Instruct-FP8");
     await expect(metaCompletion("meta-key", [{ type: "text", text: "hi" }], "prompt", AbortSignal.timeout(1000), pricebook)).rejects.toMatchObject({ code: "AI_PROVIDER" });
     globalThis.fetch = originalFetch;

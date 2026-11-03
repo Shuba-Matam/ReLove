@@ -1,40 +1,26 @@
-# Phase 2 AI readiness
+# Phase 2 AI activation
 
-AI routes are implemented but production provider calls remain unverified. The core and AI migrations were approved and applied on November 1, 2026; do not reapply them. No schema change is part of this patch.
+Phase 2 AI is implemented for listing drafts, voice transcription, and listing-photo cutouts. No schema change is required for this release. Production remains off until the existing environment and database feature gates are enabled by the release owner.
 
-## Provider contracts
+## Current provider contracts
 
-- Drafts use Baseten chat completions with one inline image and optional seller transcript. Muse JSON is requested as text and validated with Zod; no response_format is sent. Default model: meta-models/muse-spark-open-1026. Verify availability with the application account; do not silently substitute models. [Vision](https://docs.baseten.co/inference/model-apis/vision.md), [JSON mode](https://docs.baseten.co/inference/json-mode.md).
-- Voice uses Meta POST /v1/asr/transcribe, multipart request and audio, muse-voice-transcribe-1.0, PUSH_TO_TALK and English/Tamil hints. Accept mono 16-bit PCM WAV at 16/24 kHz, at most 60 seconds and 3 MB. The response includes sessionId, audioDurationMs and turns; only the validated transcript reaches the browser. [Response schema](https://dev.meta.ai/docs/api-reference/voice/schemas).
-- Cutouts use Meta POST /v1/responses, sam-3.1, streaming one-bit masks, the inline original photo and a bounded text prompt. The installed @meta-sam/parser decodes masks. [Client libraries](https://dev.meta.ai/docs/sam/client-libraries), [segmentation](https://dev.meta.ai/docs/sam/segmenting).
+- Drafts use Meta `POST /v1/chat/completions` with the allowlisted `muse-spark-1.3` model, an optional seller transcript, and at most one owned inline image. Requests use `max_completion_tokens: 1200` and `reasoning_effort: "minimal"`; the same 1,200-token ceiling is included in the cost preflight. Plain-text JSON is strictly validated and seller-sensitive fields remain unset.
+- Voice uses Meta `POST /v1/asr/transcribe` with `muse-voice-transcribe-1.0`. Input is mono 16-bit PCM WAV at 16 or 24 kHz, at most 60 seconds and 3 MB. Only the validated transcript reaches the browser.
+- Cutouts use Meta `POST /v1/responses` with `sam-3.1`, an owned inline original image, a bounded noun-phrase prompt, and one-bit masks. Invalid, ambiguous, tiny, near-full-frame, or fragmented masks leave the original unchanged.
 
-## Safeguards and frontend contract
+All calls use fixed endpoints and server-only credentials. They require authentication, same-origin mutation checks, the global kill switch, owner allowlisting while test mode is active, enabled pricebook rows, and atomic budget reservation. Failures count. Test mode forces zero retries.
 
-- Provider calls require login, server-only keys, same-origin mutations, AI_ENABLED=true and atomic existing database budgets. Defaults remain disabled, 50 global attempts/day and 5/user/day, UTC. Failures and retries count.
-- The provider operation has a 20-second deadline. Draft and voice allow one retry; cutout allows none. The guard permits at most two retries. Database and storage operations also take time; the provider deadline does not prove total end-to-end latency.
-- POST /api/ai/draft takes {image_path?, transcript?}, at least one required, and returns {draft,suggested_fields}. Model-supplied prices fail validation; brand, edition and condition hints become null. Prefill only suggested fields; sellers choose condition/price and confirm before publishing.
-- POST /api/ai/transcribe takes multipart file, returns {transcript} for editing. Posting remains available without voice or AI.
-- POST /api/ai/cutout takes {listing_id} after publication for the owner and returns {status}. Pending requests return 409. Tiny (<1.5%), near-full-frame (>95%), fragmented or ambiguous masks retain the original. Derived images never overwrite the source.
-- Provider output URLs are not fetched. Source ownership is checked; failed derived uploads are cleaned up where possible.
+## Activation checklist
 
-## Deployment and verification
+1. Keep `AI_DRAFT_PROVIDER=meta` and `META_MODEL=muse-spark-1.3`; configure `META_API_KEY` only in the server environment.
+2. Confirm the existing database budget is enabled with the approved total cap, per-feature reservations, pricebook rows, and daily/per-user limits. Do not add or modify schema for activation.
+3. Keep `AI_TEST_MODE=true` and an exact owner email or user ID in `AI_OWNER_ALLOWLIST` for the first production smoke tests.
+4. Set `AI_ENABLED=true` only when the release owner is ready to run capped tests. Restart or redeploy so server runtime configuration is refreshed.
+5. Through the normal authenticated routes, verify one owner photo draft, one short voice clip, and one owner listing cutout. Confirm manual fallback, seller review, original-photo preservation, and no automatic publication.
+6. After verification, either keep owner-only test mode for a limited rollout or disable test mode only with explicit owner approval. Leave budget, authentication, CSRF, parsing, and output bounds in place.
 
-Routes request maxDuration=30. Vercel's documented Hobby ceiling supports this: 300 seconds with Fluid compute, or 60 seconds without it. A paid-plan upgrade is not required for this setting. Verify the deployed configuration; no provider timing or cold-start performance has been measured. [Vercel duration limits](https://vercel.com/docs/functions/configuring-functions/duration).
+The local smoke helper calls the authenticated draft route and prints only status, suggested field names, and an error code. Use `localhost` consistently for both the app origin and request origin. Never print or commit session cookies, access tokens, image paths, transcripts, or provider keys.
 
-Cutouts are bounded owner-triggered requests, not durable background jobs. Stale pending claims can be retried after 60 seconds; process termination can leave cleanup for a later attempt. Do not describe this as automatic background processing.
+## Deferred scope
 
-Before activation:
-
-1. Supply application BASETEN_API_KEY and META_API_KEY privately to server environments. Coding-agent Baseten access does not configure these keys.
-2. Verify model availability and credit/usage access.
-3. Enable only features being tested through existing settings, preserving global/user limits. No migration is needed to toggle existing settings.
-4. Run npm run smoke:ai -- <owned-upload-path> or npm run smoke:ai -- --transcript "a chair" with a private SMOKE_SESSION_COOKIE. Output excludes image paths, transcripts and credentials.
-5. Test owner photos and English/Tamil/mixed recordings; confirm seller edits, synonyms, mask quality, original toggle and manual fallback. Exercise off/bad-key/timeout/broken-JSON/cap scenarios before release.
-
-## Proposed following phase: several items from one image
-
-Proposed scope, awaiting product confirmation: one room photo, seller selects which detected items to list, then reviews a separate draft and cutout for each item. Start with at most four selected items from one image. No automatic publication or multi-photo listing redesign. Preserve the original as evidence; measure segmentation quality and usage before choosing final limits.
-
-This needs object selection, independent draft review and safe source/cutout ownership and deletion. Assess whether existing contracts suffice; present any concrete schema change for approval before implementation. No speculative tables or migrations are included.
-
-Video remains a later feasibility check. First consider seller-selected still frames from a short clip; full multi-object tracking adds processing, cost, duplicate-item handling and cleanup. Confirm desired output and measure provider performance before choosing duration, frame limits or background infrastructure. No video implementation or schema change is included.
+Multi-item extraction from one image, video, background queues, search/message AI, automatic publication, and push notifications are not part of this activation.

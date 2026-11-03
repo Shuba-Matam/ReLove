@@ -85,7 +85,7 @@ const META_MUSE_SPARK_1_3_STANDARD_OUTPUT_CENTI_MICRO_USD = 425n;
  *   Do not set response_format; request plain text JSON and validate with Zod.
  * - We never fetch arbitrary provider URLs; only the two fixed endpoints above.
  *
- * Meta endpoint verified 2026-11-03 via official docs and approved 2026-11-03 for drafts:
+ * Meta endpoint verified 2026-11-04 via official docs and approved 2026-11-03 for drafts:
  * - https://dev.meta.ai/docs/cookbook/quickstart-chat-completions and
  *   https://dev.meta.ai/docs/protocols/chat-completions document
  *   POST https://api.meta.ai/v1/chat/completions with model muse-spark-1.3 and vision
@@ -93,9 +93,10 @@ const META_MUSE_SPARK_1_3_STANDARD_OUTPUT_CENTI_MICRO_USD = 425n;
  *   Contributor variants/training), NOT Muse Spark Open (meta-models/muse-spark-open-1026
  *   via Baseten). Owner APPROVED muse-spark-1.3 standard for listing labels/descriptions
  *   using Meta app credits; implementation retains optional Baseten compatibility with no
- *   silent other-model fallback. All gates remain off (AI_ENABLED=false, DB disabled) until
- *   explicit activation; no paid tests. Any AI_DRAFT_PROVIDER=meta requires explicit opt-in
- *   and allowlisted model; invalid provider/model FAILS CLOSED.
+ *   silent other-model fallback. Chat completions use the preferred max_completion_tokens
+ *   field and reasoning_effort "minimal" so the fixed 1200-token completion ceiling is not
+ *   needlessly consumed by default reasoning. Any AI_DRAFT_PROVIDER=meta requires explicit
+ *   opt-in and allowlisted model; invalid provider/model FAILS CLOSED.
  * - Voice: POST https://api.meta.ai/v1/asr/transcribe (muse-voice-transcribe-1.0) — verified via
  *   https://dev.meta.ai/docs/api-reference/voice/transcribe — uses META_API_KEY.
  * - SAM: POST https://api.meta.ai/v1/responses model sam-3.1 — verified via
@@ -202,7 +203,12 @@ export async function metaCompletion(key: string, content: unknown[], prompt: st
   const response = await fetch(META_ENDPOINT, {
     method: "POST", signal, cache: "no-store", redirect: "error",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: prompt }, { role: "user", content }], max_tokens: maxOutputTokens }),
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "system", content: prompt }, { role: "user", content }],
+      max_completion_tokens: maxOutputTokens,
+      reasoning_effort: "minimal",
+    }),
   });
   checkProviderResponse(response);
   let json: unknown;

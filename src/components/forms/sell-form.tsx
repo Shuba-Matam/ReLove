@@ -254,7 +254,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[#9AA4B8]"><Sparkles className="size-3.5 text-[#82b7ff]" /> Optional AI help</div>
           <p className="mt-1 text-xs leading-5 text-[#9AA4B8]">Never auto-publishes. Apply suggestions one by one and verify. Drafts and voice happen before Publish; each regenerate or retry counts against daily limits.</p>
           <p className="mt-1 text-[11px] leading-4 text-[#9AA4B8]">Original is truth; seller confirms. Uncertain brand/edition/condition remain blank; AI never sets price.</p>
-          {!anyAi && canWrite && !sessionLoading && <p className="mt-2 text-xs leading-5 text-amber-300/90">AI is off or not configured — fill fields manually below. Daily caps do not guarantee credits survive across days.</p>}
+          {!anyAi && canWrite && !sessionLoading && <p className="mt-2 text-xs leading-5 text-amber-300/90">AI is off or not configured — fill fields manually below.</p>}
           {anyAi && !draftAvailable && canWrite && <p className="mt-2 text-xs leading-5 text-amber-300/80">Draft generation unavailable with current provider. Voice may still work; otherwise fill manually.</p>}
           {anyAi && draftAvailable && !voiceAvailable && canWrite && <p className="mt-2 text-xs leading-5 text-amber-300/80">Voice transcription unavailable with current provider. Type description directly.</p>}
           <div className="mt-3 space-y-2.5">
@@ -288,7 +288,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
             )}
             {!draftAvailable && canWrite && anyAi && <p className="text-xs text-[#9AA4B8]">Drafts unavailable with current config — enter title/description manually.</p>}
             {!anyAi && canWrite && <p className="text-xs text-[#9AA4B8]">AI is off — fill fields manually below.</p>}
-            <p className="text-[10px] leading-4 text-[#6B7280]">Daily limits reset at UTC midnight; lifetime credit protection requires owner-approved budget caps (see docs/AI-BUDGET-PROPOSAL.md).</p>
+            <p className="text-[10px] leading-4 text-[#6B7280]">AI use is limited. Manual listing remains available at all times.</p>
           </div>
         </div>
 
