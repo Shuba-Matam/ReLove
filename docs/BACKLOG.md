@@ -13,6 +13,7 @@ Owner requested postponement while Phase 2 AI features are brought live.
 
 - Current cutout flow intentionally accepts exactly one clear mask and produces one derived listing image.
 - Multi-item extraction, choosing among several detected objects, and publishing multiple cutouts from one original are not implemented in this change.
+- Feasibility explored in `docs/MULTI-CUTOUT-FEASIBILITY.md`: recommended first experiment is user tap/box selection for up to three items with separate reviewed listings; automatic discovery remains a later detector/vision step. No pipeline, schema, quota, or remote changes were made.
 
 ## Multiple listing photos - later phase
 

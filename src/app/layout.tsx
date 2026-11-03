@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <React.Suspense fallback={<header className="h-14 border-b border-[#4a3025]/40 bg-[#1a100c]" aria-hidden="true" />}>
               <SiteHeader />
             </React.Suspense>
-            <main id="main-content" className="mx-auto max-w-7xl px-4 py-6 pb-24 md:px-5 md:py-8 md:pb-8">{children}</main>
+            <main id="main-content" className="mx-auto min-w-0 max-w-7xl px-4 py-6 pb-24 md:px-5 md:py-8 md:pb-8">{children}</main>
             <MobileNav />
             <NotificationToasts />
             <PwaRegistration />

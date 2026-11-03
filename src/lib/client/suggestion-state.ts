@@ -24,3 +24,9 @@ export function isSuggestionApplied(field: SuggestionField, suggestion: Suggesti
   }
   return false;
 }
+
+export function suggestionDisplayValue(field: SuggestionField, suggestion: SuggestionValues): string {
+  if (field === "tags") return (suggestion.tags ?? []).join(", ");
+  const value = suggestion[field];
+  return typeof value === "string" ? value : "";
+}

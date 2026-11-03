@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isSuggestionApplied, type ListingSuggestionState, type SuggestionValues } from "@/lib/client/suggestion-state";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SuggestionRow } from "@/components/forms/suggestion-row";
+import { isSuggestionApplied, suggestionDisplayValue, type ListingSuggestionState, type SuggestionValues } from "@/lib/client/suggestion-state";
 
 const suggestion: SuggestionValues = {
   title: "Desk chair",
@@ -33,5 +36,23 @@ describe("AI suggestion applied state", () => {
   it("does not report empty or reordered suggestions as applied", () => {
     expect(isSuggestionApplied("title", { title: null }, { ...applied, title: "" })).toBe(false);
     expect(isSuggestionApplied("tags", suggestion, { ...applied, tags: ["seat", "chair"] })).toBe(false);
+  });
+
+  it("preserves complete long suggestion content for narrow-screen wrapping", () => {
+    const longTitle = "T".repeat(100);
+    const unbrokenDescription = "descriptiontoken".repeat(200).slice(0, 3000);
+    const longTags = Array.from({ length: 12 }, (_, index) => `${index}`.padEnd(32, "x"));
+    const longSuggestion: SuggestionValues = { title: longTitle, description: unbrokenDescription, tags: longTags };
+
+    expect(suggestionDisplayValue("title", longSuggestion)).toBe(longTitle);
+    expect(suggestionDisplayValue("description", longSuggestion)).toBe(unbrokenDescription);
+    expect(suggestionDisplayValue("tags", longSuggestion)).toBe(longTags.join(", "));
+    expect(suggestionDisplayValue("description", longSuggestion)).toHaveLength(3000);
+
+    const rendered = renderToStaticMarkup(createElement(SuggestionRow, { label: "Description", value: unbrokenDescription, applied: false, onApply: () => undefined }));
+    expect(rendered).toContain(unbrokenDescription);
+    expect(rendered).toContain("Apply description suggestion");
+    expect(rendered).toContain("overflow-wrap:anywhere");
+    expect(rendered).not.toContain("truncate");
   });
 });

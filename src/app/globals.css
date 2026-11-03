@@ -74,6 +74,16 @@ body {
 
 .text-balance { text-wrap: balance; }
 
+@keyframes voice-fallback {
+  0%, 100% { transform: scaleY(.55); opacity: .7; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+.voice-fallback-bar {
+  transform-origin: center;
+  animation: voice-fallback .8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
