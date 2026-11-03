@@ -7,7 +7,7 @@ export function Select({ className, children, ...props }: React.SelectHTMLAttrib
     <div className="relative">
       <select
         className={cn(
-          "flex h-9 w-full appearance-none rounded-full bg-[#020102] px-3.5 pr-8 py-2 text-[13px] text-[#F5F5F7] ring-1 ring-[#021640]/60 focus:ring-2 focus:ring-[#60a5fa]/30 focus:outline-none",
+          "flex h-9 w-full appearance-none rounded-full bg-[#020102] px-3.5 pr-8 py-2 text-[13px] text-[#F5F5F7] ring-1 ring-[#021640]/60 focus:ring-2 focus:ring-[#60a5fa] focus:outline-none",
           className
         )}
         {...props}

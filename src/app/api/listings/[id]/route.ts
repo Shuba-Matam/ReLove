@@ -119,7 +119,8 @@ export const PATCH = withApi(async (request: NextRequest, context: unknown) => {
 
   // If category_id provided, verify exists
   if (body.category_id) {
-    const { data: cat } = await supabase.from("categories").select("id").eq("id", body.category_id).single();
+    const { data: cat, error: categoryError } = await supabase.from("categories").select("id").eq("id", body.category_id).maybeSingle();
+    if (categoryError) throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Categories are temporarily unavailable. Please try again.");
     if (!cat) throw new ApiProblem(400, "validation_error", "Invalid category.", { category_id: ["Category does not exist."] });
   }
 

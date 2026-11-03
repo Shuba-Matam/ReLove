@@ -101,7 +101,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
       if (!res.ok) throw new Error(json?.error?.message ?? json?.message ?? "AI draft unavailable. Fill fields manually.");
       const data = (json.data ?? json) as DraftSuggestion;
       setAiDraft(data.draft);
-      setSuggestedFields(data.suggested_fields ?? Object.keys(data.draft).filter((k) => (data.draft as Record<string, unknown>)[k] != null));
+      setSuggestedFields((data.suggested_fields ?? []).filter((field) => ["title", "description", "category_slug", "tags"].includes(field)));
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI assistance unavailable — continue manually.");
     } finally {
@@ -114,7 +114,6 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
     setConfirmed(false);
     if (field === "title" && aiDraft.title) setTitle(aiDraft.title);
     if (field === "description" && aiDraft.description) setDescription(aiDraft.description);
-    if (field === "condition_hint" && aiDraft.condition_hint) setCondition(aiDraft.condition_hint);
     if (field === "category_slug" && aiDraft.category_slug) {
       const cat = CATEGORIES.find((c) => c.slug === aiDraft.category_slug);
       if (cat) setCategoryId(cat.id);
@@ -227,7 +226,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
             <div className="relative w-full max-w-sm overflow-hidden rounded-xl ring-1 ring-[#021640]/60">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageUrl} alt="Listing preview — original photo" className="h-auto w-full object-cover" />
-              <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); setUploadInfo(""); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>
+              <button type="button" onClick={() => { setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiDraft(null); setSuggestedFields([]); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>
             </div>
           ) : (
             <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl bg-[#020102] px-6 py-10 text-center ring-1 ring-dashed ring-[#021640] transition hover:ring-[#03245e] focus-within:ring-[#03245e]">
@@ -329,10 +328,10 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
           <div>
             <Label htmlFor="tags">Tags (optional, max 12)</Label>
             <div className="mt-1.5 flex gap-2">
-              <Input id="tags" value={tagInput} onChange={(e)=>setTagInput(e.target.value)} placeholder="Add tag and press Enter" maxLength={32} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}}} className="bg-[#020102]" />
-              <Button type="button" variant="secondary" size="sm" onClick={()=>{ if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); }}} disabled={tags.length>=12}>Add</Button>
+              <Input id="tags" value={tagInput} onChange={(e)=>setTagInput(e.target.value)} placeholder="Add tag and press Enter" maxLength={32} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); setConfirmed(false); }}}} className="bg-[#020102]" />
+              <Button type="button" variant="secondary" size="sm" onClick={()=>{ if(tagInput.trim() && tags.length<12){ setTags([...tags, tagInput.trim()]); setTagInput(""); setConfirmed(false); }}} disabled={tags.length>=12}>Add</Button>
             </div>
-            {tags.length>0 && <div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t,i)=><span key={i} className="inline-flex items-center gap-1 rounded-full bg-[#01071d] px-2.5 py-1 text-xs text-[#F5F5F7] ring-1 ring-[#021640]/40">{t}<button type="button" onClick={()=>setTags(tags.filter((_,idx)=>idx!==i))} aria-label={`Remove ${t}`} className="rounded-full p-0.5 hover:bg-[#03245e] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white"><X className="size-3" /></button></span>)}</div>}
+            {tags.length>0 && <div className="mt-2 flex flex-wrap gap-1.5">{tags.map((t,i)=><span key={i} className="inline-flex items-center gap-1 rounded-full bg-[#01071d] px-2.5 py-1 text-xs text-[#F5F5F7] ring-1 ring-[#021640]/40">{t}<button type="button" onClick={()=>{ setTags(tags.filter((_,idx)=>idx!==i)); setConfirmed(false); }} aria-label={`Remove ${t}`} className="rounded-full p-0.5 hover:bg-[#03245e] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white"><X className="size-3" /></button></span>)}</div>}
           </div>
 
           <label className="flex cursor-pointer items-start gap-2.5 rounded-xl bg-[#020102] p-3 text-sm leading-5 ring-1 ring-[#021640]/60 has-[:checked]:ring-[#03245e]">

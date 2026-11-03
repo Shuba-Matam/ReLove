@@ -239,44 +239,50 @@ async function spawnNextServer(port, expect) {
     // We force AI off, but keep any existing keys ignored
   };
 
-  const controller = new AbortController();
   const child = spawn(process.execPath, [nextBin, "start", "-p", String(port), "-H", "127.0.0.1"], {
     env,
     stdio: ["ignore", "pipe", "pipe"],
-    signal: controller.signal,
     detached: false,
+    windowsHide: true,
+  });
+
+  await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("spawn", resolve);
   });
 
   let stdout = "";
   let stderr = "";
-  child.stdout?.on("data", (d) => { stdout += d.toString(); });
-  child.stderr?.on("data", (d) => { stderr += d.toString(); });
+  child.stdout?.on("data", (d) => { stdout = (stdout + d.toString()).slice(-8192); });
+  child.stderr?.on("data", (d) => { stderr = (stderr + d.toString()).slice(-8192); });
 
-  const cleanup = async () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    try {
-      controller.abort();
-      child.kill();
-    } catch {}
-    // give 3s to exit gracefully, then force-kill (Windows needs taskkill for tree)
-    const forced = delay(3000).then(async () => {
-      try { child.kill("SIGKILL"); } catch {}
-      if (process.platform === "win32" && child.pid) {
-        try {
-          const cp = await import("node:child_process");
-          // best-effort tree kill on Windows
-          cp.spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", timeout: 2000 });
-        } catch {}
-      }
+  let cleanupPromise;
+  const cleanup = () => {
+    if (cleanupPromise) return cleanupPromise;
+    if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    cleanupPromise = new Promise((resolve, reject) => {
+      const finish = (error) => {
+        clearTimeout(forceTimer);
+        clearTimeout(hardTimer);
+        child.off("exit", onExit);
+        if (error) reject(error);
+        else resolve();
+      };
+      const onExit = () => finish();
+      const forceTimer = setTimeout(() => {
+        // Never leave a delayed kill behind after exit (the OS may reuse the PID).
+        if (child.exitCode !== null || child.signalCode !== null) return finish();
+        if (process.platform === "win32" && child.pid) {
+          const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+          killer.on("error", () => {});
+        }
+        try { child.kill("SIGKILL"); } catch {}
+      }, 3000);
+      const hardTimer = setTimeout(() => finish(new Error("Production smoke server did not stop within 5s")), 5000);
+      child.once("exit", onExit);
+      try { child.kill(); } catch (error) { finish(error); }
     });
-    await Promise.race([
-      new Promise((r) => child.once("exit", r)),
-      forced.then(() => new Promise((r) => child.once("exit", r))),
-      // absolute hard timeout 5s
-      delay(5000),
-    ]);
-    // ensure no lingering listeners
-    child.removeAllListeners("exit");
+    return cleanupPromise;
   };
 
   // Ensure cleanup on parent signals

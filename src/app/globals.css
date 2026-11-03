@@ -47,8 +47,10 @@ body {
   outline-offset: 2px;
 }
 
-a { color: var(--color-link); }
-a:hover { color: var(--color-link-hover); }
+@layer base {
+  a { color: var(--color-link); }
+  a:hover { color: var(--color-link-hover); }
+}
 
 /* Hide scrollbars for chip rows but keep keyboard access */
 .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }

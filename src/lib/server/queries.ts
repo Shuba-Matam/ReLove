@@ -41,9 +41,14 @@ export async function listListings(raw: Record<string, unknown>): Promise<ApiRes
   query = filters.sort === "newest" ? query.order("created_at", { ascending: false }) : query.order("price_inr", { ascending: filters.sort === "price_asc" });
   const { data, error, count } = await query.order("id", { ascending: true }).range(filters.cursor, filters.cursor + filters.limit - 1);
   if (error) {
-    // Empty inventory pagination edge: PostgREST may error on out-of-range cursor; treat as empty page
-    if ((count ?? 0) === 0 || filters.cursor >= (count ?? 0)) {
-      return { data: [], mode, meta: { total: count ?? 0, next_cursor: null } };
+    // PostgREST omits count on failed responses. Only recover an actual range
+    // error, and read the same filtered query's count before reporting an empty page.
+    if (error.code === "PGRST103") {
+      const firstPage = await query.range(0, 0);
+      const total = firstPage.count;
+      if (!firstPage.error && total !== null && Number.isInteger(total) && total >= 0 && filters.cursor >= total) {
+        return { data: [], mode, meta: { total, next_cursor: null } };
+      }
     }
     throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Listings are temporarily unavailable. Please try again.");
   }

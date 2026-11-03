@@ -84,6 +84,11 @@ describe.sequential("real database migrations and RLS", () => {
     expect((await asUser(stranger, "select id from threads where id=$1", [thread])).rows).toHaveLength(0);
     await expect(asUser(buyer, "update threads set seller_id=$1 where id=$2", [stranger, thread])).rejects.toThrow();
   });
+  it("updates inbox ordering in the same transaction as a new message", async () => {
+    await asUser<{ id: string }>(buyer, "insert into messages(thread_id,sender_id,recipient_id,body) values($1,$2,$3,'First message') returning id", [thread, buyer, seller]);
+    const result = await asUser<{ updated: boolean }>(buyer, "select t.updated_at = m.created_at as updated from threads t join messages m on m.thread_id=t.id where t.id=$1 order by m.created_at desc limit 1", [thread]);
+    expect(result.rows[0].updated).toBe(true);
+  });
   it("isolates messages and makes only received read receipts writable", async () => {
     message = (await asUser<{ id: string }>(buyer, "insert into messages(thread_id,sender_id,recipient_id,body) values($1,$2,$3,'Is it available?') returning id", [thread, buyer, seller])).rows[0].id;
     expect((await asUser(stranger, "select * from messages")).rows).toHaveLength(0);

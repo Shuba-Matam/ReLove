@@ -87,7 +87,8 @@ export const POST = withApi(async (request: NextRequest) => {
   }
 
   // Ensure category exists
-  const { data: catExists } = await supabase.from("categories").select("id").eq("id", input.category_id).single();
+  const { data: catExists, error: categoryError } = await supabase.from("categories").select("id").eq("id", input.category_id).maybeSingle();
+  if (categoryError) throw new ApiProblem(503, "DATABASE_UNAVAILABLE", "Categories are temporarily unavailable. Please try again.");
   if (!catExists) {
     throw new ApiProblem(400, "validation_error", "Invalid category.", { category_id: ["Category does not exist."] });
   }

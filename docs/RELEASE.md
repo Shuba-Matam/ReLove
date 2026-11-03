@@ -2,6 +2,16 @@
 
 This doc describes the exact commands, phases, modes, and remaining manual steps. No secrets are printed by any script.
 
+## Combined integration — November 3, 2026
+
+The black-base UI, Phase 2 AI hardening and recovered reliability fixes are integrated. `npm run check` passed: 85 app tests, 27 release tests, lint, type checking and production build. The local production build passed `smoke-http --start --expect=live` against the existing database, using read-only requests; its temporary server exited cleanly. AI remains disabled pending application keys and provider smoke tests. No new real-account sign-in or visual browser verification is claimed by these checks.
+
+## Status recorded November 2, 2026
+
+The marketplace is integrated and deployed by the primary coordinating thread. The migration application is recorded in `supabase/migrations-draft/README.md`; do not reapply it as an onboarding step. The owner reported successful Google login, posting, and messaging tests on November 2. Further live regression checks belong to the primary release workflow.
+
+This continuation adds backend reliability fixes and release validation without requiring provider credentials. It preserves the current API contracts and schema. AI provider enablement and the parallel UI work remain with the primary thread.
+
 ## Exact env contract (final builder commit — already set in Vercel/local)
 
 ```
@@ -42,7 +52,7 @@ npx --yes npm@11.21.1 ci
 # 3. Lint / typegen / tests — in CI order
 npx --yes npm@11.21.1 run lint
 npx --yes npm@11.21.1 run typecheck   # next typegen && tsc --noEmit (clean-checkout fix)
-npx --yes npm@11.21.1 test            # 45 app tests (vitest)
+npx --yes npm@11.21.1 test            # app tests (vitest)
 npx --yes npm@11.21.1 run test:release # built-in release script tests, no deps (also in npm run check)
 # or directly: node --test scripts/release-checks.test.mjs
 
@@ -58,6 +68,8 @@ node scripts/smoke-http.mjs --expect=live --origin=https://re-love-pi.vercel.app
 node scripts/smoke-http.mjs --start --expect=demo
 npx --yes npm@11.21.1 run smoke:http -- --start --expect=demo --port=3100 --timeout=8000
 ```
+
+On Windows PowerShell, use `node scripts/smoke-http.mjs --start --expect=demo` directly if an npm wrapper drops the forwarded flags. To force a demo build, set `$env:APP_MODE='demo'`, `$env:AI_ENABLED='false'`, and `$env:GOOGLE_AUTH_ENABLED='false'` before the build command.
 
 ## Mode semantics (what the smoke distinguishes)
 
@@ -77,15 +89,15 @@ Both domains are already in Supabase site URL / redirect allowlist per `re-love-
 
 ## What is NOT done here (sidecar scope only)
 
-* This checkout is **validation sidecar only** — no schema push, no `git push`, no Vercel deploy. Migrations `supabase/migrations-draft/001_initial.sql` and `002_ai.sql` are **owner-approved frozen drafts**; application to the Tokyo (`ap-northeast-1`) Supabase project happens via the primary track after the final builder commit (not here).
+* This continuation prepares commits for the primary thread to integrate. It does not apply schema changes, push, or deploy. The owner-approved SQL has already been applied according to the migration record.
 * CI builds demo with `APP_MODE=demo AI_ENABLED=false GOOGLE_AUTH_ENABLED=false` and no secrets for public smoke; production runtime is already `APP_MODE=live GOOGLE_AUTH_ENABLED=true AI_ENABLED=false` in Vercel and local `.env.local`.
 * No paid AI calls; smoke never sends provider credentials. AI routes stay 503 disabled until owner later enables with `BASETEN_API_KEY`/`META_API_KEY`.
 
 ## Remaining verification (outside this checkout)
 
-1. **Primary track applies approved migrations** — `001_initial.sql` / `002_ai.sql` to remote DB after builder final commit.
-2. **Google sign-in E2E** — production OAuth redirect already confirmed; full 2-account flow (login → `auth/callback` → protected POST → thread/message → logout) still needs test on `re-love-pi.vercel.app`.
-3. **Live smoke (post-apply)** — `node --env-file=.env.local scripts/check-env.mjs --strict` and `node scripts/smoke-http.mjs --expect=live --origin=https://re-love-pi.vercel.app`.
+1. **Integration** — primary thread integrates the reliability commits with the parallel AI/UI work, then runs the release checks on the combined result.
+2. **Live regression** — the owner reported login, posting, and messaging working. After integration, verify these on the connected deployment; this local test pass does not establish new real-account evidence.
+3. **Live smoke** — `node --env-file=.env.local scripts/check-env.mjs --strict` and `node scripts/smoke-http.mjs --expect=live --origin=https://re-love-pi.vercel.app` through the primary release workflow.
 4. **Optional AI** — if enabling later, set `AI_ENABLED=true` plus at least one provider key and non-zero caps; DB `ai_budget`/`ai_settings` remain hard upper caps.
 
 No further owner approvals needed — this doc does not re-ask for decisions already made.
@@ -108,7 +120,7 @@ node --env-file-if-exists=.env.local scripts/check-env.mjs # 0
 npx --yes npm@11.21.1 ci                                   # ok
 npx --yes npm@11.21.1 run lint                             # ok
 npx --yes npm@11.21.1 run typecheck                        # ok
-npx --yes npm@11.21.1 test                                  # 45 passed (builder)
+npx --yes npm@11.21.1 test                                  # 73 passed (November 2 continuation)
 npx --yes npm@11.21.1 run test:release                      # passed (release layer, isolated, behavioral)
 node --test scripts/release-checks.test.mjs               # alias, same
 APP_MODE=demo AI_ENABLED=false GOOGLE_AUTH_ENABLED=false npx --yes npm@11.21.1 run build  # ok demo build
@@ -118,7 +130,8 @@ npx --yes npm@11.21.1 run check                            # lint + typecheck + 
 
 ## Remaining limits / integration note
 
-* This checkout `t3-a09c7a1a` is release sidecar only (early skeleton page remains); full marketplace `src/app` lands via builder integration from `t3-89478c46`. `check-env`/`smoke-http` already target the final contract, so they light up fully once that commit merges.
+* The November 2 continuation in `t3/279214cf` passed `npm run check` (73 app tests, 27 release tests, lint, typecheck, production build) and `node scripts/smoke-http.mjs --start --expect=demo`. The smoke server exited successfully. No new browser, real-account, provider, or deployment verification is claimed here.
+* Live feed failures return `503 DATABASE_UNAVAILABLE`; only `PGRST103` range errors trigger a bounded count recovery using the same filters. Category database failures also return 503 instead of an invalid-category response. Message inserts rely on the existing `messages_bump_thread` database trigger, removing a redundant network update; the real migration test verifies inbox ordering.
 * `next typegen` before `tsc` required on clean checkouts (`.next/types` generation) — CI encodes this.
 * `npm ci` via `npx --yes npm@11.21.1 ci` avoids the npm10 `edgesOut` bug.
 * Contract verified against `src/lib/server/env.ts`, `src/lib/ai/context.ts`, `src/app/api/health/route.ts`, `src/lib/server/queries.ts`, `supabase/migrations-draft/001_initial.sql` + `002_ai.sql` — no mismatch; future `ApiResponse {data,mode,meta}` / health `setup503` drift will fail smoke.

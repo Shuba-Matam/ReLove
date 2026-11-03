@@ -60,12 +60,8 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
     throw new ApiProblem(500, "db_error", "Failed to send message.");
   }
 
-  // Bump thread updated_at
-  const { error: bumpErr } = await supabase.from("threads").update({ updated_at: new Date().toISOString() }).eq("id", threadId);
-  if (bumpErr) {
-    console.error("[messages POST] bump updated_at error:", bumpErr);
-    // Non-fatal
-  }
+  // The messages_bump_thread trigger updates inbox ordering atomically with
+  // this insert. A second request adds latency and requires unnecessary grants.
 
   return json(inserted, 201);
 });
