@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/refs -- notifications provider needs sync state reset for account isolation and polling lifecycle */
+/* eslint-disable react-hooks/set-state-in-effect -- notifications provider needs sync state reset for account isolation and polling lifecycle */
 "use client";
 
 import * as React from "react";
@@ -62,7 +62,7 @@ function NotificationsInner({
   const [state, setState] = React.useState<NotificationControllerState>(() => createInitialNotificationState(userId));
   const [isPolling, setIsPolling] = React.useState(false);
 
-  // Keep refs for deps
+  // Keep refs for stable scheduler callbacks without re-creating scheduler on thread change
   const userIdRef = React.useRef(userId);
   const modeRef = React.useRef(mode);
   const openThreadIdRef = React.useRef(openThreadId);
@@ -73,8 +73,18 @@ function NotificationsInner({
   }, [userId, mode, openThreadId]);
 
   const schedulerRef = React.useRef<NotificationPollScheduler | null>(null);
-  if (schedulerRef.current == null) {
-    schedulerRef.current = new NotificationPollScheduler(userId, {
+
+  // Safety for direct prop change without unmount in tests: switch identity if owner mismatches
+  React.useEffect(() => {
+    if (schedulerRef.current && state.ownerId !== userId) {
+      schedulerRef.current.switchIdentity(userId);
+    }
+  }, [userId, state.ownerId]);
+
+  // Polling lifecycle: fresh scheduler per effect setup, destroy only that instance on cleanup.
+  // This survives React StrictMode setup->cleanup->setup: cleanup destroys old instance and only nulls ref if it still points to that instance.
+  React.useEffect(() => {
+    const scheduler = new NotificationPollScheduler(userId, {
       getUserId: () => userIdRef.current,
       getMode: () => modeRef.current,
       getOpenThreadId: () => openThreadIdRef.current,
@@ -83,30 +93,22 @@ function NotificationsInner({
         setState(next);
       },
     });
-  }
+    schedulerRef.current = scheduler;
 
-  // If key didn't remount but userId prop changed due to null->value without key? Key handles most, but also handle sync switch as safety
-  // This guards against React not remounting when userId goes null->null? No, key is __anon__ for null. Switch null->real will remount. So this is redundant but keep for direct prop change without unmount in tests
-  React.useEffect(() => {
-    if (schedulerRef.current && state.ownerId !== userId) {
-      schedulerRef.current.switchIdentity(userId);
-    }
-  }, [userId, state.ownerId]);
+    // Sync React state when identity changed without key remount (tests). Keep functional update to avoid state dep.
+    setState((prev) => (prev.ownerId === userId ? prev : createInitialNotificationState(userId)));
 
-  // Polling lifecycle per identity
-  React.useEffect(() => {
-    const scheduler = schedulerRef.current;
-    if (!scheduler) return;
-
-    // If not enabled, ensure no interval
     if (!userId || mode !== "live") {
-      scheduler.clearIntervalSafe();
       setIsPolling(false);
-      return;
+      return () => {
+        scheduler.destroy();
+        if (schedulerRef.current === scheduler) {
+          schedulerRef.current = null;
+        }
+      };
     }
 
     scheduler.start();
-    // Derive polling flag from interval existence; start sets interval if enabled
     setIsPolling(true);
 
     const onFocus = () => {
@@ -115,7 +117,6 @@ function NotificationsInner({
     };
     const onVisibility = () => {
       scheduler.onVisibilityChange();
-      // isHidden check inside; polling flag reflects interval presence
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {
         setIsPolling(false);
       } else {
@@ -131,11 +132,10 @@ function NotificationsInner({
       document.removeEventListener("visibilitychange", onVisibility);
       scheduler.clearIntervalSafe();
       setIsPolling(false);
-      // Invalidate generation/cancel fetch so stale work cannot update state after unmount
       scheduler.destroy();
-      // Recreate scheduler for potential remount with same key? But key will remount anyway.
-      // Reset ref so next mount creates fresh scheduler
-      schedulerRef.current = null;
+      if (schedulerRef.current === scheduler) {
+        schedulerRef.current = null;
+      }
     };
   }, [userId, mode]);
 

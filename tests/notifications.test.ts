@@ -13,6 +13,7 @@ import {
   NotificationPollScheduler,
   applyNotificationSummary,
   createInitialNotificationState,
+  type NotificationControllerState,
 } from "@/lib/client/notifications-controller";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
@@ -450,6 +451,195 @@ describe("NotificationPollScheduler — production controller", () => {
     await h.scheduler.doFetch();
     expect(h.scheduler.getState().toasts.length).toBe(0); // baseline seed
     expect(h.scheduler.getState().seenIds.has(msgId1)).toBe(true);
+  });
+});
+
+// Regression: provider effect lifecycle must survive StrictMode setup->cleanup->setup and mode toggles without stale ref overwrite
+describe("NotificationsProvider effect lifecycle regression", () => {
+  it("StrictMode setup->cleanup->setup recreates scheduler and polling resumes", async () => {
+    let schedulerRef: NotificationPollScheduler | null = null;
+    const capturedStates: NotificationControllerState[] = [];
+    const currentUser: string | null = alice;
+    const currentMode: string | null = "live";
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: summary({ unreadCount: 1, messages: [msg({ id: msgId1 })] }), mode: "live" }),
+    } as unknown as Response));
+    const intervalStore = new Map<number, () => void>();
+    let nextIntervalId = 100;
+    const setIntervalFn = vi.fn((cb: () => void) => {
+      const id = nextIntervalId++;
+      intervalStore.set(id, cb);
+      return id as unknown as number;
+    });
+    const clearIntervalFn = vi.fn((id: number) => {
+      intervalStore.delete(id);
+    });
+
+    function setupEffect() {
+      const scheduler = new NotificationPollScheduler(currentUser, {
+        getUserId: () => currentUser,
+        getMode: () => currentMode,
+        getOpenThreadId: () => null,
+        fetchFn: fetchMock as unknown as typeof fetch,
+        setIntervalFn: setIntervalFn as unknown as (cb: () => void, ms: number) => number,
+        clearIntervalFn: clearIntervalFn as unknown as (id: number) => void,
+        onStateChange: (s) => capturedStates.push(s),
+      });
+      schedulerRef = scheduler;
+      if (currentUser && currentMode === "live") {
+        scheduler.start();
+      }
+      return () => {
+        const owned = scheduler;
+        owned.destroy();
+        if (schedulerRef === owned) schedulerRef = null;
+      };
+    }
+
+    const cleanup1 = setupEffect();
+    expect(schedulerRef).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Allow first fetch to settle
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intervalStore.size).toBe(1);
+
+    // StrictMode cleanup destroys first instance and nulls only if still current
+    cleanup1();
+    expect(schedulerRef).toBeNull();
+    expect(intervalStore.size).toBe(0);
+
+    // Second setup must create fresh scheduler and resume polling
+    const cleanup2 = setupEffect();
+    expect(schedulerRef).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(schedulerRef!.getState().ownerId).toBe(alice);
+    expect(capturedStates.length).toBeGreaterThan(0);
+    // New scheduler must still be able to update state after stale destroy
+    expect(schedulerRef!.getState().isInitialized).toBe(true);
+
+    cleanup2();
+    expect(schedulerRef).toBeNull();
+  });
+
+  it("enabled mode toggle stops polling and restarts without stale overwrite", async () => {
+    let schedulerRef: NotificationPollScheduler | null = null;
+    const currentUser: string | null = alice;
+    let currentMode: string | null = "live";
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: summary({ unreadCount: 2, messages: [msg({ id: msgId2 })] }), mode: "live" }),
+    } as unknown as Response));
+    const intervals = new Map<number, () => void>();
+    let nextId = 200;
+    const setIntervalFn = vi.fn((cb: () => void) => {
+      const id = nextId++;
+      intervals.set(id, cb);
+      return id as unknown as number;
+    });
+    const clearIntervalFn = vi.fn((id: number) => intervals.delete(id));
+
+    function mountWithMode() {
+      const scheduler = new NotificationPollScheduler(currentUser, {
+        getUserId: () => currentUser,
+        getMode: () => currentMode,
+        getOpenThreadId: () => null,
+        fetchFn: fetchMock as unknown as typeof fetch,
+        setIntervalFn: setIntervalFn as unknown as (cb: () => void, ms: number) => number,
+        clearIntervalFn: clearIntervalFn as unknown as (id: number) => void,
+        onStateChange: () => {},
+      });
+      schedulerRef = scheduler;
+      if (currentUser && currentMode === "live") {
+        scheduler.start();
+      }
+      return () => {
+        const owned = scheduler;
+        owned.destroy();
+        if (schedulerRef === owned) schedulerRef = null;
+      };
+    }
+
+    // Start enabled
+    let cleanup = mountWithMode();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intervals.size).toBe(1);
+    const firstScheduler = schedulerRef;
+    cleanup();
+    expect(schedulerRef).toBeNull();
+
+    // Switch to disabled mode (demo) — should not start polling
+    currentMode = "demo";
+    fetchMock.mockClear();
+    cleanup = mountWithMode();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(intervals.size).toBe(0);
+    expect(schedulerRef).not.toBeNull();
+    expect(schedulerRef).not.toBe(firstScheduler);
+    const disabledScheduler = schedulerRef;
+    cleanup();
+    expect(schedulerRef).toBeNull();
+
+    // Re-enable to live — must restart polling with fresh scheduler
+    currentMode = "live";
+    fetchMock.mockClear();
+    cleanup = mountWithMode();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(intervals.size).toBe(1);
+    expect(schedulerRef).not.toBe(disabledScheduler);
+    cleanup();
+  });
+
+  it("stale cleanup does not null newer scheduler instance", () => {
+    let schedulerRef: NotificationPollScheduler | null = null;
+    const currentUser: string | null = alice;
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: summary({ unreadCount: 0, messages: [] }), mode: "live" }),
+    } as unknown as Response));
+
+    function createAndTrack() {
+      const s = new NotificationPollScheduler(currentUser, {
+        getUserId: () => currentUser,
+        getMode: () => "live",
+        getOpenThreadId: () => null,
+        fetchFn: fetchMock as unknown as typeof fetch,
+        onStateChange: () => {},
+      });
+      schedulerRef = s;
+      s.start();
+      return s;
+    }
+
+    const schedulerA = createAndTrack();
+    expect(schedulerRef).toBe(schedulerA);
+    // Rapid prop change: create B before cleanup of A
+    const schedulerB = createAndTrack();
+    expect(schedulerRef).toBe(schedulerB);
+    expect(schedulerRef).not.toBe(schedulerA);
+
+    // Cleanup of stale A must not overwrite current B
+    const cleanupA = () => {
+      schedulerA.destroy();
+      if (schedulerRef === schedulerA) schedulerRef = null;
+    };
+    cleanupA();
+    expect(schedulerRef).toBe(schedulerB);
+    expect(schedulerRef).not.toBeNull();
+
+    // Cleanup B should null
+    const cleanupB = () => {
+      schedulerB.destroy();
+      if (schedulerRef === schedulerB) schedulerRef = null;
+    };
+    cleanupB();
+    expect(schedulerRef).toBeNull();
   });
 });
 
