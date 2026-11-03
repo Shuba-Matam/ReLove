@@ -205,47 +205,7 @@ begin
   if pb.provider <> p_provider or pb.model <> p_model then
     return query select null::uuid,null::uuid,false,'rejected'::text,'provider_mismatch'::text,null::jsonb; return; end if;
 
-  -- per-provider monetary guard: NULL/missing/nonpositive cap MUST reject (fail closed)
-  if pb.provider = 'meta' then
-    cap_to_check := bud.meta_micro_usd_cap;
-    reserve_to_check := bud.meta_reserve_micro_usd;
-    used_to_check := bud.meta_micro_usd_used;
-  else
-    cap_to_check := bud.baseten_micro_usd_cap;
-    reserve_to_check := bud.baseten_reserve_micro_usd;
-    used_to_check := bud.baseten_micro_usd_used;
-  end if;
-  if cap_to_check is null or cap_to_check <= 0 then
-    return query select null::uuid,null::uuid,false,'rejected'::text,'budget_unconfigured'::text,null::jsonb; return; end if;
-  -- reserve must be <= cap (per-provider, not shared pool)
-  if reserve_to_check > cap_to_check then
-    return query select null::uuid,null::uuid,false,'rejected'::text,'invalid_reserve'::text,null::jsonb; return; end if;
-  -- effective spendable = cap - reserve
-  if used_to_check + pb.max_cost_micro_usd > (cap_to_check - reserve_to_check) then
-    return query select null::uuid,null::uuid,false,'rejected'::text,'budget_exhausted'::text,null::jsonb; return; end if;
-
-  -- stricter env bounds vs DB: effective limit is least(cap, env)
-  if p_daily_limit is not null and p_daily_limit > 0 then
-    effective_daily := least(bud.daily_limit, feat.daily_limit, p_daily_limit);
-  else
-    effective_daily := least(bud.daily_limit, feat.daily_limit);
-  end if;
-  if p_user_limit is not null and p_user_limit > 0 then
-    effective_user := least(bud.per_user_limit, feat.per_user_limit, p_user_limit);
-  else
-    effective_user := least(bud.per_user_limit, feat.per_user_limit);
-  end if;
-  -- count attempts (includes pending/failed) per UTC day
-  select count(*) into global_count from public.ai_attempts where created_at >= today;
-  select count(*) into user_count from public.ai_attempts where user_id = p_user_id and created_at >= today;
-  select count(*) into feature_count from public.ai_attempts where feature = p_feature and created_at >= today;
-  select count(*) into feature_user_count from public.ai_attempts where user_id = p_user_id and feature = p_feature and created_at >= today;
-  if global_count >= effective_daily or feature_count >= feat.daily_limit then
-    return query select null::uuid,null::uuid,false,'rejected'::text,'global_limit'::text,null::jsonb; return; end if;
-  if user_count >= effective_user or feature_user_count >= feat.per_user_limit then
-    return query select null::uuid,null::uuid,false,'rejected'::text,'user_limit'::text,null::jsonb; return; end if;
-
-  -- idempotency lookup after lock
+  -- idempotency lookup immediately after core checks: duplicate respected even after spend limit, but disabled kill switch still stops (disabled already checked above)
   select * into existing_op from public.ai_operations
     where user_id = p_user_id and feature = p_feature and idempotency_key = p_idempotency_key for update;
   if found then
@@ -271,11 +231,59 @@ begin
       update public.ai_operations set status='pending', updated_at=now(), attempt_count = attempt_count + 1 where id = new_op_id;
     end if;
   else
-    -- fresh operation: insert pending
+    -- fresh operation: insert pending (only after duplicate check passes fresh path)
     insert into public.ai_operations(user_id, feature, idempotency_key, source_hash, listing_id, provider, model, price_micro_usd, status, attempt_count)
     values (p_user_id, p_feature, p_idempotency_key, p_source_hash, p_listing_id, pb.provider, pb.model, pb.max_cost_micro_usd, 'pending', 1)
     returning id into new_op_id;
   end if;
+
+  -- monetary and rate checks now apply only to fresh or retry allowed paths; duplicate already returned above
+  -- per-provider monetary guard: NULL/missing/nonpositive cap MUST reject (fail closed)
+  if pb.provider = 'meta' then
+    cap_to_check := bud.meta_micro_usd_cap;
+    reserve_to_check := bud.meta_reserve_micro_usd;
+    used_to_check := bud.meta_micro_usd_used;
+  else
+    cap_to_check := bud.baseten_micro_usd_cap;
+    reserve_to_check := bud.baseten_reserve_micro_usd;
+    used_to_check := bud.baseten_micro_usd_used;
+  end if;
+  if cap_to_check is null or cap_to_check <= 0 then
+    -- revert pending insertion for fresh case: mark failed and return budget_unconfigured so duplicate logic stays honest
+    -- for retry case we already marked pending; need to revert to failed
+    update public.ai_operations set status='failed', updated_at=now() where id = new_op_id;
+    return query select new_op_id, null::uuid,false,'rejected'::text,'budget_unconfigured'::text,null::jsonb; return; end if;
+  -- reserve must be <= cap (per-provider, not shared pool)
+  if reserve_to_check > cap_to_check then
+    update public.ai_operations set status='failed', updated_at=now() where id = new_op_id;
+    return query select new_op_id, null::uuid,false,'rejected'::text,'invalid_reserve'::text,null::jsonb; return; end if;
+  -- effective spendable = cap - reserve
+  if used_to_check + pb.max_cost_micro_usd > (cap_to_check - reserve_to_check) then
+    update public.ai_operations set status='failed', updated_at=now() where id = new_op_id;
+    return query select new_op_id, null::uuid,false,'rejected'::text,'budget_exhausted'::text,null::jsonb; return; end if;
+
+  -- stricter env bounds vs DB: effective limit is least(cap, env)
+  if p_daily_limit is not null and p_daily_limit > 0 then
+    effective_daily := least(bud.daily_limit, feat.daily_limit, p_daily_limit);
+  else
+    effective_daily := least(bud.daily_limit, feat.daily_limit);
+  end if;
+  if p_user_limit is not null and p_user_limit > 0 then
+    effective_user := least(bud.per_user_limit, feat.per_user_limit, p_user_limit);
+  else
+    effective_user := least(bud.per_user_limit, feat.per_user_limit);
+  end if;
+  -- count attempts (includes pending/failed) per UTC day
+  select count(*) into global_count from public.ai_attempts where created_at >= today;
+  select count(*) into user_count from public.ai_attempts where user_id = p_user_id and created_at >= today;
+  select count(*) into feature_count from public.ai_attempts where feature = p_feature and created_at >= today;
+  select count(*) into feature_user_count from public.ai_attempts where user_id = p_user_id and feature = p_feature and created_at >= today;
+  if global_count >= effective_daily or feature_count >= feat.daily_limit then
+    update public.ai_operations set status='failed', updated_at=now() where id = new_op_id;
+    return query select new_op_id, null::uuid,false,'rejected'::text,'global_limit'::text,null::jsonb; return; end if;
+  if user_count >= effective_user or feature_user_count >= feat.per_user_limit then
+    update public.ai_operations set status='failed', updated_at=now() where id = new_op_id;
+    return query select new_op_id, null::uuid,false,'rejected'::text,'user_limit'::text,null::jsonb; return; end if;
 
   -- create attempt that gates provider execution (only fresh attempt_id may call provider)
   insert into public.ai_attempts(operation_id, user_id, feature, provider, model, price_micro_usd)
