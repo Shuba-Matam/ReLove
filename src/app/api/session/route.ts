@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withApi(async () => {
   const mode = getAppMode();
+  const auth_configured = isAuthConfigured();
   const availability = getAiFeatureAvailability();
   let ai_enabled = availability.any;
   let ai_features = { draft: availability.draft, transcribe: availability.transcribe, cutout: availability.cutout, moderation: availability.moderation } as const;
