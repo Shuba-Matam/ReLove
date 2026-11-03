@@ -22,9 +22,8 @@ export default function InstallPage() {
         Install Re-Love
       </h1>
       <p className="mt-3 max-w-[60ch] text-sm leading-6 text-[#9AA4B8]">
-        Add Re-Love to your home screen for faster access. It opens like an
-        app and stays in your recent apps, but it still needs the internet to
-        work.
+        Add Re-Love to your home screen for faster access. You can also keep
+        using Re-Love in your browser without installing it.
       </p>
 
       <div className="mt-8 space-y-8 pt-8 text-sm leading-7 text-[#9AA4B8]">
@@ -56,8 +55,8 @@ export default function InstallPage() {
           <ol className="mt-3 list-decimal space-y-2 pl-5 marker:text-[#82b7ff]">
             <li>Open Re-Love in Safari.</li>
             <li>
-              Tap the Share button (square with an arrow pointing up) in the
-              toolbar.
+              Tap Share (the square with an arrow pointing up). Depending on
+              your Safari layout, you may need to open the Page Menu first.
             </li>
             <li>
               Choose <span className="text-[#F5F5F7]">Add to Home Screen</span>.
@@ -89,8 +88,8 @@ export default function InstallPage() {
             <li>Confirm to add it, then open from your home screen.</li>
           </ol>
           <p className="mt-3">
-            If you do not see an install option, use Add to Home Screen from
-            the same menu, or open the site from your home screen bookmark.
+            If neither option is available, bookmark Re-Love and keep using
+            it in Chrome.
           </p>
         </section>
 
@@ -108,12 +107,14 @@ export default function InstallPage() {
               it to install.
             </li>
             <li>
-              If there is no address bar icon, open the browser Apps menu
-              (or the three-dot menu → Save and share / Apps → Install) and
-              choose Install.
+              If there is no address bar icon, check the browser menu under
+              Apps or Save and share for an install option.
             </li>
-            <li>Re-Love will open in its own window and stay in your apps.</li>
+            <li>If installation is offered, confirm it to open Re-Love in its own window.</li>
           </ol>
+          <p className="mt-3">
+            If no install option is available, keep using Re-Love in a browser tab.
+          </p>
         </section>
 
         <section
@@ -150,9 +151,8 @@ export default function InstallPage() {
               .
             </li>
             <li>
-              Re-Love does not currently send push notifications when the app
-              is closed. Check your inbox when you open Re-Love for new
-              messages.
+              Check your inbox when you open Re-Love for new messages. Any
+              optional alerts need to be enabled separately from your profile.
             </li>
           </ul>
         </section>
@@ -165,9 +165,10 @@ export default function InstallPage() {
             Remove or reinstall
           </h2>
           <p className="mt-2">
-            Remove Re-Love like any other home screen app or shortcut — long
-            press the icon and remove it. You can reinstall any time from this
-            page.
+            On a phone or tablet, press and hold the home screen icon to see
+            removal options. On a computer, use the installed app&apos;s menu
+            or your browser&apos;s app settings. You can return to this guide
+            to install it again.
           </p>
         </section>
       </div>
