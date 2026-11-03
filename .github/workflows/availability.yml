@@ -1,0 +1,46 @@
+name: availability
+
+# Lightweight judging-window availability probe — 2× daily, hard bounded.
+# Schedule runs only on default branch (main); may delay per GitHub; disabled after 60d inactivity.
+# See https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows
+
+on:
+  schedule:
+    # Twice daily off top of hour (minute 17) — avoids thundering herd, 2 req/day
+    - cron: "17 3,15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: availability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # Canonical-repo-only fork protection; schedule already default-branch-only but guard manual forks
+    if: github.repository == 'Shuba-Matam/ReLove'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22.14+
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14"
+
+      - name: Probe /api/health (bounded, no npm install, no secrets)
+        # Hard cutoff via script — even manual workflow_dispatch makes zero requests after 2026-11-17T00:00:00Z
+        # No network after judging window; explicit SKIP distinct from PASS
+        run: node scripts/check-availability.mjs --cutoff=2026-11-17T00:00:00Z
+
+# Notes:
+# - No secrets, no npm install, no auth headers, no deployment/push/schema/notification sending.
+# - Failure action status visible (check runs red); no messages/emails/issue creation.
+# - Judging window: active until November 16 2026 end UTC (2026-11-17T00:00:00Z). Planned 2 req/day <=28 total until cutoff.
+# - This workflow is inactive until merged to default branch; local candidate requires default-branch integration.
+# - Schedule may delay and is disabled after 60 days repo inactivity per GitHub docs.
+# - Does not guarantee uptime nor prevent Supabase free-project pausing (see docs/AVAILABILITY.md).

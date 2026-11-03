@@ -14,6 +14,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import "./check-availability.test.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
