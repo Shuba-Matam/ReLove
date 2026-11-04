@@ -15,7 +15,7 @@ import { priceWarning as validatePrice } from "@/lib/ai/rules";
 import { compressImage, formatBytes } from "@/lib/client/compress";
 import { cutoutPreviewIdentity, reconcileLoadedPreview } from "@/lib/client/cutout-preview";
 import { draftIdempotencyKey, generationSourceKey, shouldApplyGenerationResult, suggestionValuesForForm } from "@/lib/client/suggestion-state";
-import { aiUsageMessage, useAiUsage } from "@/lib/client/ai-usage";
+import { aiUsageMessage, invalidateAiUsage, useAiUsage } from "@/lib/client/ai-usage";
 import { useSession } from "@/lib/client/session";
 import { Mic, Sparkles, Upload, X, AlertTriangle, LoaderCircle, Square } from "lucide-react";
 
@@ -67,7 +67,7 @@ export function SellForm({
   const voiceAvailable = session?.ai_features?.transcribe ?? session?.ai_enabled ?? false;
   const anyAi = session?.ai_features ? (session.ai_features.draft || session.ai_features.transcribe || session.ai_features.cutout) : (session?.ai_enabled ?? false);
   const cutoutAvailable = session?.ai_features?.cutout ?? session?.ai_enabled ?? false;
-  const { usage: aiUsage, unavailable: aiUsageUnavailable, refresh: refreshAiUsage } = useAiUsage(session?.user?.id);
+  const { usage: aiUsage, unavailable: aiUsageUnavailable } = useAiUsage(session?.user?.id, "draft");
 
   const [title, setTitle] = React.useState((initialListing?.title as string) ?? initialData?.title ?? "");
   const [description, setDescription] = React.useState((initialListing?.description as string) ?? "");
@@ -127,6 +127,7 @@ export function SellForm({
     const currentUserId = session?.user?.id ?? null;
     if (previousSessionUserRef.current !== undefined && previousSessionUserRef.current !== currentUserId) {
       generationRequestRef.current++;
+      setAiLoading(false);
       setAiStatus("");
       setAiFeedback(null);
       setAiError("");
@@ -153,7 +154,7 @@ export function SellForm({
           const nextTranscript = json.data?.transcript ?? json.transcript ?? "";
           setTranscript((previous) => (previous ? `${previous}\n` : "") + nextTranscript);
         } finally {
-          void refreshAiUsage();
+          invalidateAiUsage();
         }
       },
     });
@@ -162,7 +163,7 @@ export function SellForm({
       voiceRecorderRef.current = null;
       controller.dispose();
     };
-  }, [refreshAiUsage]);
+  }, []);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -209,7 +210,7 @@ export function SellForm({
       setCutout(result); setPhotoDisplayMode("both"); setConfirmed(false);
     } catch (err) {
       if (imagePathRef.current === requestedPath) setCutoutError(err instanceof Error ? err.message : "Cutout unavailable. Your original is unchanged.");
-    } finally { setCutoutLoading(false); void refreshAiUsage(); }
+    } finally { setCutoutLoading(false); invalidateAiUsage(); }
   }
 
   async function handleAiDraft() {
@@ -250,7 +251,7 @@ export function SellForm({
       if (generationRequestRef.current === requestId) setAiError(err instanceof Error ? err.message : "AI assistance is unavailable. Continue manually.");
     } finally {
       if (generationRequestRef.current === requestId) setAiLoading(false);
-      void refreshAiUsage();
+      invalidateAiUsage();
     }
   }
 
@@ -425,15 +426,15 @@ export function SellForm({
               {!voiceAvailable && canWrite && <p className="mt-1 text-[11px] text-[#bba995]">Voice is off. Type your description instead.</p>}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="primary" size="sm" onClick={handleAiDraft} disabled={aiLoading || voiceBusy || !canWrite || !draftAvailable || Boolean(aiUsage && !aiUsage.available) || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate Suggestions"}</Button>
+              <Button type="button" variant="primary" onClick={handleAiDraft} disabled={aiLoading || voiceBusy || !canWrite || !draftAvailable || Boolean(aiUsage && !aiUsage.available) || (!imagePath && !transcript)} className="w-full sm:w-auto sm:min-w-52">{aiLoading ? "Generating…" : "Generate Suggestions"}</Button>
               {aiLoading && <span className="text-xs text-[#bba995]" role="status">Generating suggestions…</span>}
             </div>
             {aiError && <p className="text-xs leading-5 text-amber-300" role="alert">{aiError}</p>}
             {aiStatus && <p className="text-xs leading-5 text-emerald-300" role="status" aria-live="polite">{aiStatus}</p>}
             {aiUsageMessage(aiUsage, aiUsageUnavailable) && <p className="text-[11px] leading-5 text-[#bba995]">{aiUsageMessage(aiUsage, aiUsageUnavailable)}</p>}
-            {aiFeedback && (aiFeedback.missing_details.length > 0 || aiFeedback.photo_guidance.length > 0) && <div className="grid gap-3 sm:grid-cols-2">
-              {aiFeedback.missing_details.length > 0 && <div className="rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50"><p className="text-xs font-medium text-[#f6ead8]">Details you may want to add</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-[#bba995]">{aiFeedback.missing_details.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-              {aiFeedback.photo_guidance.length > 0 && <div className="rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50"><p className="text-xs font-medium text-[#f6ead8]">Photo tips</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-[#bba995]">{aiFeedback.photo_guidance.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+            {aiFeedback && (aiFeedback.missing_details.length > 0 || aiFeedback.photo_guidance.length > 0) && <div className="grid min-w-0 max-w-full gap-3 sm:grid-cols-2">
+              {aiFeedback.missing_details.length > 0 && <div className="min-w-0 max-w-full rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50 [overflow-wrap:anywhere]"><p className="text-xs font-medium text-[#f6ead8]">Details you may want to add</p><ul className="mt-2 min-w-0 max-w-full list-disc space-y-1 pl-4 text-xs leading-5 text-[#bba995] [overflow-wrap:anywhere]">{aiFeedback.missing_details.map((item) => <li key={item} className="min-w-0 max-w-full [overflow-wrap:anywhere]">{item}</li>)}</ul></div>}
+              {aiFeedback.photo_guidance.length > 0 && <div className="min-w-0 max-w-full rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50 [overflow-wrap:anywhere]"><p className="text-xs font-medium text-[#f6ead8]">Photo tips</p><ul className="mt-2 min-w-0 max-w-full list-disc space-y-1 pl-4 text-xs leading-5 text-[#bba995] [overflow-wrap:anywhere]">{aiFeedback.photo_guidance.map((item) => <li key={item} className="min-w-0 max-w-full [overflow-wrap:anywhere]">{item}</li>)}</ul></div>}
             </div>}
           </div>
           </section>

@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { aiLimitCap, assertOwnerTestGate, getAiUserDailyLimit } from "./context";
+import { aiLimitCap, assertOwnerTestGate, getAiUserDailyLimit, type AiFeature } from "./context";
 import { createMeteringClient } from "./meter";
 import { getAiFeatureAvailability, getFeatureProviderModel } from "@/lib/server/env";
 
@@ -31,12 +31,13 @@ const pricebookSchema = z.object({
 
 export type AiUsageDataSource = {
   getBudget: () => Promise<unknown>;
-  getSettings: () => Promise<unknown>;
-  getPricebook: () => Promise<unknown>;
-  countAttempts: (filters: { since: string; userId?: string; feature?: "draft" }) => Promise<number>;
+  getSettings: (feature: AiFeature) => Promise<unknown>;
+  getPricebook: (feature: AiFeature) => Promise<unknown>;
+  countAttempts: (filters: { since: string; userId?: string; feature?: AiFeature }) => Promise<number>;
 };
 
 export type AiUsageSnapshot = {
+  feature: AiFeature;
   remaining: number;
   limit: number;
   used: number;
@@ -56,13 +57,13 @@ function createSupabaseUsageDataSource(client: NonNullable<ReturnType<typeof cre
       if (error || !data) throw new Error("AI_USAGE_UNAVAILABLE");
       return data;
     },
-    async getSettings() {
-      const { data, error } = await client.from("ai_settings").select("enabled,daily_limit,per_user_limit").eq("feature", "draft").maybeSingle();
+    async getSettings(feature) {
+      const { data, error } = await client.from("ai_settings").select("enabled,daily_limit,per_user_limit").eq("feature", feature).maybeSingle();
       if (error || !data) throw new Error("AI_USAGE_UNAVAILABLE");
       return data;
     },
-    async getPricebook() {
-      const { data, error } = await client.from("ai_pricebook").select("provider,model,max_cost_micro_usd,enabled").eq("feature", "draft").maybeSingle();
+    async getPricebook(feature) {
+      const { data, error } = await client.from("ai_pricebook").select("provider,model,max_cost_micro_usd,enabled").eq("feature", feature).maybeSingle();
       if (error || !data) throw new Error("AI_USAGE_UNAVAILABLE");
       return data;
     },
@@ -77,9 +78,9 @@ function createSupabaseUsageDataSource(client: NonNullable<ReturnType<typeof cre
   };
 }
 
-export async function readAiUsageSnapshot(user: { id: string; email?: string | null }, now = new Date(), dataSource?: AiUsageDataSource): Promise<AiUsageSnapshot> {
-  if (process.env.AI_ENABLED !== "true" || !getAiFeatureAvailability().draft) {
-    return { remaining: 0, limit: 0, used: 0, resets_at: nextUtcReset(now), available: false, unavailability: "disabled" };
+export async function readAiUsageSnapshot(user: { id: string; email?: string | null }, feature: AiFeature = "draft", now = new Date(), dataSource?: AiUsageDataSource): Promise<AiUsageSnapshot> {
+  if (process.env.AI_ENABLED !== "true" || !getAiFeatureAvailability()[feature]) {
+    return { feature, remaining: 0, limit: 0, used: 0, resets_at: nextUtcReset(now), available: false, unavailability: "disabled" };
   }
   assertOwnerTestGate(user);
   const client = createMeteringClient();
@@ -89,31 +90,33 @@ export async function readAiUsageSnapshot(user: { id: string; email?: string | n
 
   const [budgetRaw, settingsRaw, pricebookRaw, globalUsed, accountUsed, featureUsed, accountFeatureUsed] = await Promise.all([
     source.getBudget(),
-    source.getSettings(),
-    source.getPricebook(),
+    source.getSettings(feature),
+    source.getPricebook(feature),
     source.countAttempts({ since }),
     source.countAttempts({ since, userId: user.id }),
-    source.countAttempts({ since, feature: "draft" }),
-    source.countAttempts({ since, userId: user.id, feature: "draft" }),
+    source.countAttempts({ since, feature }),
+    source.countAttempts({ since, userId: user.id, feature }),
   ]);
   const budget = budgetSchema.parse(budgetRaw);
   const settings = settingsSchema.parse(settingsRaw);
   const pricebook = pricebookSchema.parse(pricebookRaw);
   const envDaily = aiLimitCap("AI_DAILY_LIMIT", 50);
   const envAccount = getAiUserDailyLimit(user);
-  const accountLimit = Math.min(envAccount, budget.per_user_limit);
-  const sharedLimit = Math.min(envDaily, budget.daily_limit);
+  const accountLimit = Math.min(envAccount, budget.per_user_limit, settings.per_user_limit);
+  const sharedLimit = Math.min(envDaily, budget.daily_limit, settings.daily_limit);
   const featureLimit = settings.daily_limit;
   const accountFeatureLimit = settings.per_user_limit;
   const remaining = Math.max(0, accountLimit - accountUsed);
+  const featureSetsSharedLimit = settings.daily_limit < Math.min(envDaily, budget.daily_limit);
+  const featureSetsAccountLimit = settings.per_user_limit < Math.min(envAccount, budget.per_user_limit);
 
   let unavailability: AiUsageSnapshot["unavailability"] = null;
   if (!budget.enabled || !settings.enabled || !pricebook.enabled || !envDaily || !envAccount) unavailability = "disabled";
-  else if (accountUsed >= accountLimit) unavailability = "account_limit";
-  else if (globalUsed >= sharedLimit) unavailability = "shared_limit";
+  else if (accountUsed >= accountLimit) unavailability = featureSetsAccountLimit ? "feature_limit" : "account_limit";
+  else if (globalUsed >= sharedLimit) unavailability = featureSetsSharedLimit ? "feature_limit" : "shared_limit";
   else if (featureUsed >= featureLimit || accountFeatureUsed >= accountFeatureLimit) unavailability = "feature_limit";
   else {
-    const expected = getFeatureProviderModel("draft");
+    const expected = getFeatureProviderModel(feature);
     const providerMatches = pricebook.provider === expected.provider && pricebook.model === expected.model;
     const cap = pricebook.provider === "meta" ? budget.meta_micro_usd_cap : budget.baseten_micro_usd_cap;
     const used = pricebook.provider === "meta" ? budget.meta_micro_usd_used : budget.baseten_micro_usd_used;
@@ -122,6 +125,7 @@ export async function readAiUsageSnapshot(user: { id: string; email?: string | n
   }
 
   return {
+    feature,
     remaining,
     limit: accountLimit,
     used: accountUsed,

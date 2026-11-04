@@ -7,8 +7,8 @@ import { SellForm, type SellFormSeed } from "@/components/forms/sell-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { compressImage, formatBytes } from "@/lib/client/compress";
-import { aiUsageMessage, useAiUsage } from "@/lib/client/ai-usage";
-import { boxToPercent, containedImageRect, defaultItemBox, derivedCutoutPathToDiscard, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint, type NormalizedCutoutBox } from "@/lib/client/multi-cutout";
+import { aiUsageMessage, invalidateAiUsage, useAiUsage } from "@/lib/client/ai-usage";
+import { boxToPercent, containedImageRect, defaultItemBox, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint, type NormalizedCutoutBox } from "@/lib/client/multi-cutout";
 import { useSession } from "@/lib/client/session";
 
 type CutoutResult = { operation_id: string; source_image_path: string; cutout_path: string; cutout_url: string; item_id: string };
@@ -42,7 +42,7 @@ export function MultiCutoutSell() {
   const { session, loading: sessionLoading } = useSession();
   const canWrite = session?.mode === "live" && Boolean(session.user);
   const available = Boolean(session?.multi_cutout_enabled && session?.ai_features?.cutout);
-  const { usage: aiUsage, unavailable: aiUsageUnavailable, refresh: refreshAiUsage } = useAiUsage(session?.user?.id);
+  const { usage: aiUsage, unavailable: aiUsageUnavailable } = useAiUsage(session?.user?.id, "cutout");
   const [imagePath, setImagePath] = React.useState("");
   const [imageUrl, setImageUrl] = React.useState("");
   const [imageSize, setImageSize] = React.useState({ width: 0, height: 0 });
@@ -184,7 +184,6 @@ export function MultiCutoutSell() {
     setDraftBox(null);
     if (!box) { setPageError("Draw a larger box fully inside the photo."); return; }
     setPageError("");
-    if (redrawCandidateId) discardCutout(candidates.find((candidate) => candidate.id === redrawCandidateId)?.result ?? null);
     setCandidates((current) => {
       if (redrawCandidateId) return current.map((candidate) => candidate.id === redrawCandidateId ? invalidateCandidate(candidate, box) : candidate);
       if (current.length >= 3) return current;
@@ -199,16 +198,9 @@ export function MultiCutoutSell() {
     setCandidates((current) => current.map((candidate) => candidate.id === id ? update(candidate) : candidate));
   }
 
-  function discardCutout(result: CutoutResult | null) {
-    const path = derivedCutoutPathToDiscard(imagePath, result?.cutout_path);
-    if (!path) return;
-    void fetch("/api/uploads", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }).catch(() => undefined);
-  }
-
   function removeCandidate(id: string) {
     const candidate = candidates.find((item) => item.id === id);
     if (!candidate || candidate.phase === "published" || candidate.phase === "pending" || queueRunning) return;
-    discardCutout(candidate.result);
     setCandidates((current) => current.filter((item) => item.id !== id));
     if (activeCandidateId === id) setActiveCandidateId(null);
     if (redrawCandidateId === id) setRedrawCandidateId(null);
@@ -251,7 +243,7 @@ export function MultiCutoutSell() {
       updateCandidate(candidateId, (item) => ({ ...item, phase: "error", error: error instanceof Error ? error.message : "Cutout unavailable.", errorCode: code }));
       return STOP_QUEUE_CODES.has(code) ? code : null;
     } finally {
-      void refreshAiUsage();
+      invalidateAiUsage();
     }
   }
 
@@ -324,14 +316,14 @@ export function MultiCutoutSell() {
       <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="secondary" size="sm" onClick={addDefaultBox} disabled={candidates.length >= 3 || queueRunning || Boolean(redrawCandidateId)}><BoxSelect /> Add item box</Button>{redrawCandidateId && <Button type="button" variant="ghost" size="sm" onClick={() => setRedrawCandidateId(null)}>Cancel redraw</Button>}<p className="text-xs text-[#bba995]">{redrawCandidateId ? "Drag a new box for the selected item." : `${candidates.length}/3 items marked.`}</p></div>
       <div className="grid gap-3 lg:grid-cols-3">{candidates.map((candidate) => {
         const percent = boxToPercent(candidate.box);
-        return <article key={candidate.id} className="space-y-3 rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/60">
-          <div className="flex items-center gap-2"><Input aria-label={`Item ${candidate.number} label`} value={candidate.label} maxLength={40} onChange={(event) => updateCandidate(candidate.id, (item) => ({ ...item, label: event.target.value }))} className="h-8 bg-[#241712]" /><Button type="button" variant={redrawCandidateId === candidate.id ? "primary" : "secondary"} size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => setRedrawCandidateId(candidate.id)}>Edit / Redraw</Button></div>
-          <fieldset className="grid grid-cols-2 gap-2"><legend className="col-span-2 text-[11px] text-[#bba995]">Box bounds, percent of photo</legend>{(["left", "top", "right", "bottom"] as const).map((edge) => <label key={edge} className="text-[10px] uppercase tracking-wide text-[#8f7d6d]">{edge}<Input type="number" min={0} max={100} step="0.1" value={(edge === "right" ? percent.left + percent.width : edge === "bottom" ? percent.top + percent.height : percent[edge]).toFixed(1)} onChange={(event) => {
+        return <article key={candidate.id} className="min-w-0 max-w-full space-y-3 rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/60 [overflow-wrap:anywhere]">
+          <div className="flex min-w-0 flex-wrap items-center gap-2"><Input aria-label={`Item ${candidate.number} label`} value={candidate.label} maxLength={40} onChange={(event) => updateCandidate(candidate.id, (item) => ({ ...item, label: event.target.value }))} className="h-8 min-w-0 flex-1 bg-[#241712]" /><Button type="button" variant={redrawCandidateId === candidate.id ? "primary" : "secondary"} size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => setRedrawCandidateId(candidate.id)} className="max-w-full whitespace-normal">Edit / Redraw</Button></div>
+          <fieldset className="grid min-w-0 max-w-full grid-cols-2 gap-2"><legend className="col-span-2 max-w-full text-[11px] text-[#bba995] [overflow-wrap:anywhere]">Box bounds, percent of photo</legend>{(["left", "top", "right", "bottom"] as const).map((edge) => <label key={edge} className="min-w-0 text-[10px] uppercase tracking-wide text-[#8f7d6d]">{edge}<Input type="number" min={0} max={100} step="0.1" value={(edge === "right" ? percent.left + percent.width : edge === "bottom" ? percent.top + percent.height : percent[edge]).toFixed(1)} onChange={(event) => {
             const values = { left: percent.left, top: percent.top, right: percent.left + percent.width, bottom: percent.top + percent.height, [edge]: Number(event.target.value) };
             const next = percentBoundsToBox(values);
-            if (next) { discardCutout(candidate.result); updateCandidate(candidate.id, (item) => invalidateCandidate(item, next)); }
+            if (next) updateCandidate(candidate.id, (item) => invalidateCandidate(item, next));
           }} disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} className="mt-1 h-8 bg-[#241712]" /></label>)}</fieldset>
-          <div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => { discardCutout(candidate.result); updateCandidate(candidate.id, (item) => invalidateCandidate(item, defaultItemBox(item.number))); }}>Reset bounds</Button><Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => removeCandidate(candidate.id)}><X /> Remove box</Button></div>
+          <div className="flex min-w-0 flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => updateCandidate(candidate.id, (item) => invalidateCandidate(item, defaultItemBox(item.number)))}>Reset bounds</Button><Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => removeCandidate(candidate.id)}><X /> Remove box</Button></div>
           {(candidate.phase === "pending" || candidate.phase === "published") && <p className="text-[11px] text-[#bba995]">{candidate.phase === "published" ? "Published boxes are locked." : "Box controls are locked while this item is processing."}</p>}
         </article>;
       })}</div>

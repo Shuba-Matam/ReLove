@@ -48,6 +48,20 @@ describe("AI draft validation and seller authority", () => {
     expect(result.feedback).toEqual({ missing_details: ["Is the charger included?"], photo_guidance: ["The item is small in the frame."] });
     expect(() => parseAiDraft(JSON.stringify({ ...draft, feedback: { missing_details: ["x".repeat(141)], photo_guidance: [] } }))).toThrow();
   });
+  it("uses natural wording guidance and removes em dashes from visible generated text", async () => {
+    const { DRAFT_PROMPT } = await import("@/lib/ai/schemas");
+    expect(DRAFT_PROMPT).toContain("natural, direct language");
+    expect(DRAFT_PROMPT).toContain("do not use em dashes");
+    const result = parseAiDraft(JSON.stringify({
+      ...draft,
+      title: "Desk chair — blue",
+      description: "Padded seat — metal legs.",
+      tags: ["chair—blue"],
+      feedback: { missing_details: ["Is the cushion — included?"], photo_guidance: ["The chair — is cropped."] },
+    }));
+    expect(JSON.stringify(result)).not.toContain("—");
+    expect(result.title).toBe("Desk chair - blue");
+  });
   it("rejects extra keys like price even when wrapped in markdown", () => {
     expect(() => parseAiDraft("```json\n" + JSON.stringify({ ...draft, price_inr: 100 }) + "\n```")).toThrow();
   });

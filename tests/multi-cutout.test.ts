@@ -3,7 +3,7 @@ import { buildObjectPrompt, type SegmentationMaskRecord } from "@meta-sam/parser
 import { AiFailure } from "@/lib/ai/guard";
 import { selectBoxMaskRecord } from "@/lib/ai/cutout";
 import { isMultiCutoutEnabled } from "@/lib/server/env";
-import { MULTI_CUTOUT_SCALE, containedImageRect, defaultItemBox, derivedCutoutPathToDiscard, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint } from "@/lib/client/multi-cutout";
+import { MULTI_CUTOUT_SCALE, containedImageRect, defaultItemBox, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint } from "@/lib/client/multi-cutout";
 
 function fakeMask(objectId: string, frameIndex?: number): SegmentationMaskRecord {
   return {
@@ -67,11 +67,4 @@ describe("multi-cutout object-contain coordinates", () => {
     expect(defaultItemBox(3)).toEqual({ left: 250000, top: 250000, right: 750000, bottom: 750000 });
   });
 
-  it("discards only an owned derived cutout and never the shared original", () => {
-    const original = "11111111-1111-4111-8111-111111111111/original.jpg";
-    const cutout = "11111111-1111-4111-8111-111111111111/cutout.jpg";
-    expect(derivedCutoutPathToDiscard(original, cutout)).toBe(cutout);
-    expect(derivedCutoutPathToDiscard(original, original)).toBeNull();
-    expect(derivedCutoutPathToDiscard(original, "22222222-2222-4222-8222-222222222222/cutout.jpg")).toBeNull();
-  });
 });

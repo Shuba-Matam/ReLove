@@ -66,9 +66,3 @@ export function percentBoundsToBox(bounds: { left: number; top: number; right: n
     { x: Math.round(clamp(bounds.right, 0, 100) * MULTI_CUTOUT_SCALE / 100), y: Math.round(clamp(bounds.bottom, 0, 100) * MULTI_CUTOUT_SCALE / 100) },
   );
 }
-
-export function derivedCutoutPathToDiscard(sourcePath: string, cutoutPath: string | null | undefined): string | null {
-  if (!cutoutPath || cutoutPath === sourcePath) return null;
-  const sourceOwner = sourcePath.split("/")[0];
-  return sourceOwner && cutoutPath.startsWith(`${sourceOwner}/`) ? cutoutPath : null;
-}

@@ -1,6 +1,6 @@
 # Re-Love
 
-A student marketplace for giving pre-loved items a new home. Built with Next.js App Router, TypeScript, Tailwind CSS, shadcn-style components, and Supabase Auth/Postgres/Storage. The original repository history is preserved.
+A student marketplace for giving pre-loved items a new home. Built with Next.js App Router, TypeScript, Tailwind CSS, shadcn-style components, and Supabase Auth/Postgres/Storage.
 
 ## What is implemented
 
@@ -14,11 +14,9 @@ A student marketplace for giving pre-loved items a new home. Built with Next.js 
 
 ## Status and boundaries
 
-The complete local build is ready for integration. The owner approved the agreed schema on November 1, 2026; the primary coordinating thread owns remote scope review, migration application, credentials, and deployment. This worktree has not changed the remote database or deployed the marketplace.
+The application includes the live marketplace flows, Google sign-in integration, Supabase-backed listings and conversations, image storage, optional AI assistance, demo mode, privacy information, and PWA assets. Production configuration and database state are operational concerns outside the repository, so source defaults remain conservative and AI stays fail-closed when credentials, settings, pricebook rows, or budgets are unavailable.
 
-The main branch already has a public branding/privacy preview. Preserve its canonical domain, privacy URL, and repository history when integrating this application. Do not merge or push a second competing deployment from a side worktree.
-
-Google OAuth configuration and production audience were confirmed in the primary thread. Set GOOGLE_AUTH_ENABLED=true only on the connected deployment. Real two-account OAuth, database, storage, mobile and provider checks remain release checks after migration application.
+The deployed environment must set its own authentication, provider, and feature flags. Production read-only checks can verify configuration and availability without making provider calls, but real-account writes, provider outputs, and mobile behavior still require explicit release verification. This repository does not apply remote schema changes or deploy itself.
 
 ## Run locally
 
@@ -32,7 +30,7 @@ npm run dev
 
 PowerShell can use Copy-Item .env.example .env.local instead of cp. Do not overwrite an existing credential file. APP_MODE=demo runs the read-only sample marketplace without contacting Supabase or AI providers. The twenty fictional listing records use original SVG illustrations; they are not real listings or photos supplied by sellers.
 
-To connect the actual marketplace, apply the approved SQL files in order using the primary thread's authorized deployment workflow, set APP_MODE=live, configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY on the server, and enable the Google readiness flag. Supabase redirect allowlists must include the deployment's /auth/callback path and localhost during development. The Google OAuth client redirects to the Supabase Auth callback, not directly to the app.
+To connect the actual marketplace, apply the approved SQL files in order through an authorized deployment workflow, set APP_MODE=live, configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY on the server, and enable the Google readiness flag. Supabase redirect allowlists must include the deployment's /auth/callback path and localhost during development. The Google OAuth client redirects to the Supabase Auth callback, not directly to the app.
 
 ## Server environment
 
@@ -47,11 +45,12 @@ To connect the actual marketplace, apply the approved SQL files in order using t
 | AI_DAILY_LIMIT | Global cap across features, defaults to 50 |
 | AI_USER_DAILY_LIMIT | Authenticated-user cap across features, defaults to 15 |
 | AI_OWNER_DAILY_LIMIT | Optional cap for an authenticated email/ID in `AI_OWNER_ALLOWLIST`; falls back to the regular cap when unset and fails closed for that owner when invalid |
-| AI_DRAFT_PROVIDER | `meta` for the production default; `baseten` keeps the compatibility adapter available without silent fallback |
+| AI_DRAFT_PROVIDER | Source default is `baseten` when unset; production must set `meta` explicitly to use the configured Meta route. There is no silent fallback after selection |
 | META_MODEL | `muse-spark-1.3` for listing suggestions |
 | META_API_KEY | Application credential for suggestions, voice, and SAM |
 | BASETEN_API_KEY | Optional compatibility credential for Muse Spark Open, not the production default |
 | BASETEN_MODEL | Optional compatibility model, defaults to meta-models/muse-spark-open-1026 |
+| AI_MAX_RETRIES | Provider retries after the first attempt; production uses `0`, so one explicit action makes at most one provider attempt |
 
 All values remain server-side; no NEXT_PUBLIC keys, service-role browser clients, or direct browser Supabase calls. Google client secret belongs in Supabase's provider configuration, not the frontend. Development coding agents and their credentials are separate from the models called by the running Re-Love app. No provider smoke test or live enablement is claimed by this repository update.
 
@@ -80,17 +79,17 @@ Prices are whole INR amounts from 0 through 10000000. Conditions are new, like_n
 
 ## AI behavior
 
-Every provider attempt reserves capacity in the database before calling the provider. A single locked ai_budget row enforces global and per-user UTC-day caps across features; ai_settings can impose smaller feature caps. Failed and pending attempts count. Retries are at most two, draft JSON repair at most one, and the operation timeout is 20 seconds. ai_budget and all features initially remain disabled. Turning on only the environment switch does not bypass database controls.
+Every provider attempt reserves capacity in the database before calling the provider. A single locked ai_budget row enforces global and per-user UTC-day caps across features; ai_settings can impose smaller feature caps. Those effective feature caps are compared with all global or account attempts, matching the atomic reservation function. Failed and pending attempts count. The code permits at most two configured retries and has a 20-second operation timeout, but production sets `AI_MAX_RETRIES=0`, so it does not make an automatic provider retry or JSON-repair call. ai_budget and all features initially remain disabled. Turning on only the environment switch does not bypass database controls.
 
 Draft validation rejects extra keys such as price; brand, edition and condition guesses are explicitly nulled. AI runs only when the seller clicks **Generate Suggestions**. Every intentional click is a new generation and fills title, description, category, and tags directly; those fields remain editable. Price, condition, and location remain seller-entered. A failed or stale response does not erase the form. The same bounded response may offer optional short missing-detail questions and photo guidance. It does not block publication or invent defects.
 
-The UI reports account AI tries remaining from the authenticated usage ledger. These are app attempts, including pending and failed reservations, not Meta credits, provider tokens, or billing balances. Cache hits do not add an attempt. Shared feature, global, and provider-budget gates can still make AI unavailable before an account reaches its own daily limit. The display resets on the ledger's UTC day boundary and hides values when the read cannot be verified.
+The UI reports shared account AI tries remaining from the authenticated usage ledger, alongside availability for the feature being shown. These are app attempts, including pending and failed reservations, not Meta credits, provider tokens, or billing balances. Cache hits do not add an attempt. Shared, feature, global, and provider-budget gates can still make a feature unavailable before an account reaches a looser environment cap. The client refreshes after draft, voice, and cutout attempts, on focus or visibility return, and just after the UTC day boundary. It hides stale values during account changes and hides values when the read cannot be verified.
 
 Transcription accepts mono PCM WAV; the browser converts its recording and limits recording to one minute. SAM checks foreground size, near-full-frame masks, fragmentation, and ambiguous multiple matches, then places the cutout over a plain background without altering the original.
 
 Cutouts are explicit pre-publication actions. The single-item flow uses a seller-entered object prompt. The multi-item flow keeps the shared original, lets the seller draw, edit, redraw, or remove up to three boxes, creates cutouts independently, and opens one listing form per successful item. Editing one box invalidates only that item. There is no automatic discovery, autonomous agent loop, or durable background job queue. Semantic AI moderation is reserved in the budget schema but not wired to publication; the deterministic keyword hold and reports work without AI.
 
-The production app model route is Meta Muse Spark 1.3. The Baseten Muse Spark Open adapter remains optional compatibility code and is not selected by default. Provider output is treated as untrusted text JSON and validated before use. Provider references: https://dev.meta.ai/docs/cookbook/quickstart-chat-completions ; https://dev.meta.ai/docs/api-reference/voice/transcribe ; https://dev.meta.ai/docs/sam/client-libraries ; https://docs.baseten.co/inference/model-apis/overview .
+The configured production routes use `muse-spark-1.3` for listing suggestions, `muse-voice-transcribe-1.0` for voice transcription, and `sam-3.1` for cutouts. The optional Baseten compatibility adapter uses `meta-models/muse-spark-open-1026`. Source code defaults an unset `AI_DRAFT_PROVIDER` to Baseten for compatibility, while production explicitly selects Meta. Provider output is treated as untrusted text or JSON and validated before use. Provider references: https://dev.meta.ai/docs/cookbook/quickstart-chat-completions ; https://dev.meta.ai/docs/api-reference/voice/transcribe ; https://dev.meta.ai/docs/sam/client-libraries ; https://docs.baseten.co/inference/model-apis/overview .
 
 ## Validation
 
