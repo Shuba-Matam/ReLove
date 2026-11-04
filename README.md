@@ -42,9 +42,9 @@ To connect the actual marketplace, apply the approved SQL files in order through
 | GOOGLE_AUTH_ENABLED | true once the Google provider and callback allowlist are ready |
 | AI_ENABLED | Master switch; keep false until provider checks pass |
 | AI_MULTI_CUTOUT_ENABLED | Independent server-side switch for the optional up-to-3 box-marking flow; defaults false |
-| AI_DAILY_LIMIT | Global cap across features, defaults to 50 |
-| AI_USER_DAILY_LIMIT | Authenticated-user cap across features, defaults to 15 |
-| AI_OWNER_DAILY_LIMIT | Optional cap for an authenticated email/ID in `AI_OWNER_ALLOWLIST`; falls back to the regular cap when unset and fails closed for that owner when invalid |
+| AI_DAILY_LIMIT | Global cap across features; the source fallback is 50 when unset, while production is configured for 60 |
+| AI_USER_DAILY_LIMIT | Authenticated-user cap across features; the source fallback is 15 when unset, while production is configured for 20 |
+| AI_OWNER_DAILY_LIMIT | Optional cap for an authenticated email/ID in `AI_OWNER_ALLOWLIST`; production is configured for 50, falls back to the regular cap when unset, and fails closed for that owner when invalid |
 | AI_DRAFT_PROVIDER | Source default is `baseten` when unset; production must set `meta` explicitly to use the configured Meta route. There is no silent fallback after selection |
 | META_MODEL | `muse-spark-1.3` for listing suggestions |
 | META_API_KEY | Application credential for suggestions, voice, and SAM |

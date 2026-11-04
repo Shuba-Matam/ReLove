@@ -14,8 +14,8 @@ All calls use fixed endpoints and server-only credentials. They require authenti
 
 1. Keep `AI_DRAFT_PROVIDER=meta` and `META_MODEL=muse-spark-1.3`; configure `META_API_KEY` only in the server environment.
 2. Confirm the existing database budget is enabled with the approved total cap, per-feature reservations, pricebook rows, and daily/per-user limits. Do not add or modify schema for activation.
-   Configure `AI_USER_DAILY_LIMIT=15` and optionally `AI_OWNER_DAILY_LIMIT=30`. The owner override is chosen only from the authenticated email/ID in `AI_OWNER_ALLOWLIST`, works independently of `AI_TEST_MODE`, falls back to 15 when absent, and fails closed for the owner when present but invalid.
-3. Set `AI_TEST_MODE=false` for the approved all-account rollout and keep the exact owner email or user ID in `AI_OWNER_ALLOWLIST` solely for the 30-attempt owner cap.
+   Configure `AI_USER_DAILY_LIMIT=20` and optionally `AI_OWNER_DAILY_LIMIT=50`. The owner override is chosen only from the authenticated email/ID in `AI_OWNER_ALLOWLIST`, works independently of `AI_TEST_MODE`, falls back to the configured regular limit when absent, and fails closed for the owner when present but invalid. If `AI_USER_DAILY_LIMIT` is unset, the source fallback remains 15.
+3. Set `AI_TEST_MODE=false` for the approved all-account rollout and keep the exact owner email or user ID in `AI_OWNER_ALLOWLIST` solely for the 50-attempt owner cap.
 4. Set `AI_ENABLED=true` only when the release owner is ready to run capped tests. Restart or redeploy so server runtime configuration is refreshed.
 5. Through the normal authenticated routes, verify one owner photo draft, one short voice clip, and one owner listing cutout. Confirm manual fallback, seller review, original-photo preservation, and no automatic publication.
 6. Leave `AI_TEST_MODE=false`, `AI_MAX_RETRIES=0`, budget, authentication, CSRF, parsing, and output bounds in place.
