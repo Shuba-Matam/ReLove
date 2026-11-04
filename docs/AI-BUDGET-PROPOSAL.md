@@ -3,7 +3,7 @@
 The hard-budget migration is already applied. This file records the active release contract; it is not a migration proposal and contains no SQL to apply.
 
 - Provider: Meta for draft, voice, and cutout. Baseten compatibility remains disabled for this release and must not use coding-agent credits.
-- Conservative Meta cap: `600000` microUSD ($0.60 app reservation ceiling).
+- Meta cap: `2000000` microUSD ($2.00 app reservation ceiling).
 - Feature reservation: `10000` microUSD for each draft, transcription, or cutout attempt.
 - Limits: 60 attempts per UTC day shared across accounts, 20 per ordinary authenticated user, and 50 for an authenticated email/ID in `AI_OWNER_ALLOWLIST` when `AI_OWNER_DAILY_LIMIT=50`.
 - Metering: every provider attempt, including a failure or timeout, requires an atomic reservation through the privileged server-only metering client. Duplicate completed operations return their validated cached result without another provider attempt.
