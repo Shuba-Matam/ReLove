@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,30 @@ type DraftSuggestion = {
 
 type CutoutPreview = { operation_id: string; source_image_path: string; cutout_path: string; cutout_url: string };
 
-export function SellForm({ initialListing }: { initialListing?: Record<string, unknown> }) {
+export type SellFormSeed = {
+  image_path: string;
+  image_url: string;
+  cutout?: CutoutPreview | null;
+  photo_display_mode?: "original" | "cutout" | "both";
+  title?: string;
+  suggestion_image_path?: string;
+};
+
+export function SellForm({
+  initialListing,
+  initialData,
+  lockPhoto = false,
+  preserveInitialPhoto = false,
+  onPublished,
+  onCancel,
+}: {
+  initialListing?: Record<string, unknown>;
+  initialData?: SellFormSeed;
+  lockPhoto?: boolean;
+  preserveInitialPhoto?: boolean;
+  onPublished?: (listing: Record<string, unknown>) => void;
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const { session, loading: sessionLoading } = useSession();
   const isDemo = session?.mode === "demo";
@@ -36,7 +60,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const anyAi = session?.ai_features ? (session.ai_features.draft || session.ai_features.transcribe || session.ai_features.cutout) : (session?.ai_enabled ?? false);
   const cutoutAvailable = session?.ai_features?.cutout ?? session?.ai_enabled ?? false;
 
-  const [title, setTitle] = React.useState((initialListing?.title as string) ?? "");
+  const [title, setTitle] = React.useState((initialListing?.title as string) ?? initialData?.title ?? "");
   const [description, setDescription] = React.useState((initialListing?.description as string) ?? "");
   const [price, setPrice] = React.useState(String((initialListing?.price_inr as number) ?? ""));
   const [categoryId, setCategoryId] = React.useState((initialListing?.category_id as string) ?? "");
@@ -44,16 +68,16 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const [block, setBlock] = React.useState((initialListing?.hostel_block as string) ?? session?.user?.hostel_block ?? "");
   const [tags, setTags] = React.useState<string[]>(Array.isArray(initialListing?.tags) ? (initialListing!.tags as string[]) : []);
   const [tagInput, setTagInput] = React.useState("");
-  const [imagePath, setImagePath] = React.useState((initialListing?.image_path as string) ?? "");
-  const [imageUrl, setImageUrl] = React.useState((initialListing?.image_url as string) ?? "");
-  const initialCutout = initialListing?.cutout_path && initialListing?.cutout_url ? {
+  const [imagePath, setImagePath] = React.useState((initialListing?.image_path as string) ?? initialData?.image_path ?? "");
+  const [imageUrl, setImageUrl] = React.useState((initialListing?.image_url as string) ?? initialData?.image_url ?? "");
+  const initialCutout = initialData?.cutout ?? (initialListing?.cutout_path && initialListing?.cutout_url ? {
     operation_id: "",
     source_image_path: (initialListing.image_path as string),
     cutout_path: initialListing.cutout_path as string,
     cutout_url: initialListing.cutout_url as string,
-  } : null;
+  } : null);
   const [cutout, setCutout] = React.useState<CutoutPreview | null>(initialCutout);
-  const [photoDisplayMode, setPhotoDisplayMode] = React.useState<"original" | "cutout" | "both">((initialListing?.photo_display_mode as "original" | "cutout" | "both") ?? (initialCutout ? "both" : "original"));
+  const [photoDisplayMode, setPhotoDisplayMode] = React.useState<"original" | "cutout" | "both">((initialListing?.photo_display_mode as "original" | "cutout" | "both") ?? initialData?.photo_display_mode ?? (initialCutout ? "both" : "original"));
   const [cutoutPrompt, setCutoutPrompt] = React.useState("");
   const [cutoutLoading, setCutoutLoading] = React.useState(false);
   const [cutoutError, setCutoutError] = React.useState("");
@@ -79,12 +103,25 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
   const [voiceAnalyserAvailable, setVoiceAnalyserAvailable] = React.useState(false);
   const voiceRecorderRef = React.useRef<VoiceRecorderController | null>(null);
   const imagePathRef = React.useRef(imagePath);
+  const previousSessionUserRef = React.useRef<string | null | undefined>(undefined);
 
   const priceNum = Number(price);
   const priceWarning = price.trim() ? validatePrice(priceNum) : null;
   const previewIdentity = cutout ? cutoutPreviewIdentity(cutout) : null;
   const previewLoaded = previewIdentity !== null && loadedPreviewIdentity === previewIdentity;
   React.useEffect(() => { imagePathRef.current = imagePath; }, [imagePath]);
+  React.useEffect(() => {
+    const currentUserId = session?.user?.id ?? null;
+    if (previousSessionUserRef.current !== undefined && previousSessionUserRef.current !== currentUserId) {
+      setAiDraft(null);
+      setSuggestedFields([]);
+      setApplyAnnouncement("");
+      setAiError("");
+      setCutoutError("");
+      setConfirmed(false);
+    }
+    previousSessionUserRef.current = currentUserId;
+  }, [session?.user?.id]);
   React.useEffect(() => {
     const controller = new VoiceRecorderController({
       onPhaseChange: setVoicePhase,
@@ -125,7 +162,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
       const res = await fetch("/api/uploads", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
-      if(imagePath && imagePath !== initialListing?.image_path) void fetch("/api/uploads", { method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:imagePath}) }).catch(() => undefined);
+      if(imagePath && imagePath !== initialListing?.image_path && imagePath !== initialData?.image_path && !preserveInitialPhoto) void fetch("/api/uploads", { method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:imagePath}) }).catch(() => undefined);
       const nextPath = json.data.path ?? json.path;
       setAiDraft(null); setSuggestedFields([]); setApplyAnnouncement(""); setConfirmed(false); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null);
       imagePathRef.current = nextPath;
@@ -165,7 +202,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
       const res = await fetch("/api/ai/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_path: imagePath || undefined, transcript: transcript || undefined }),
+        body: JSON.stringify({ image_path: initialData?.suggestion_image_path || imagePath || undefined, transcript: transcript || undefined }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? json?.message ?? "AI suggestions are unavailable. Fill fields manually.");
@@ -246,8 +283,10 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
         if (json?.error?.fields) setFieldErrors(Object.fromEntries(Object.entries(json.error.fields as Record<string,string[]>).map(([field,messages]) => [field,messages.join(" ")])));
         throw new Error(json?.error?.message ?? "Failed to save listing");
       }
-      const id = json.data?.id ?? (initialListing?.id as string);
-      router.push(`/listings/${id}`);
+      const saved = (json.data ?? json) as Record<string, unknown>;
+      const id = saved.id ?? (initialListing?.id as string);
+      if (onPublished && !isEdit) onPublished(saved);
+      else router.push(`/listings/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -272,6 +311,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
           <div>
             <h2 className="text-base font-semibold tracking-tight text-[#f6ead8]">Photo workspace</h2>
             <p className="mt-1 text-xs leading-5 text-[#bba995]">Add one clear photo. A background cutout is optional.</p>
+            {session?.multi_cutout_enabled && !initialListing && !initialData && <p className="mt-2 text-xs text-[#ead7b7]"><Link href="/sell/multiple" className="underline decoration-[#ead7b7]/60 underline-offset-4 hover:text-white">Mark up to 3 items from one photo</Link></p>}
           </div>
 
           <div className="space-y-2">
@@ -280,7 +320,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
               <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[#1a100c] ring-1 ring-[#4a3025]/70">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={imageUrl} alt="Listing photo preview" className="h-full w-full object-contain" />
-                <button type="button" onClick={() => { imagePathRef.current = ""; setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiDraft(null); setSuggestedFields([]); setApplyAnnouncement(""); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>
+                {!lockPhoto && <button type="button" onClick={() => { imagePathRef.current = ""; setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiDraft(null); setSuggestedFields([]); setApplyAnnouncement(""); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>}
               </div>
             ) : (
               <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl bg-[#1a100c] px-6 text-center ring-1 ring-dashed ring-[#75513e] transition hover:bg-[#21140f] hover:ring-[#ead7b7] focus-within:ring-[#ead7b7]">
@@ -290,7 +330,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
                 <input type="file" id="image" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
               </label>
             )}
-            {imageUrl && (
+            {imageUrl && !lockPhoto && (
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#1a100c] px-3 py-1.5 text-xs font-medium text-[#bba995] ring-1 ring-[#4a3025]/60 hover:text-[#f6ead8] hover:ring-[#ead7b7]">
                 <Upload className="size-3.5" /> Replace photo
                 <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
@@ -301,7 +341,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
             {!imagePath && !uploading && <p className="text-xs text-[#bba995]">A photo is required to publish.</p>}
           </div>
 
-          <div className="space-y-3 border-t border-[#4a3025]/60 pt-5">
+          {!lockPhoto && <div className="space-y-3 border-t border-[#4a3025]/60 pt-5">
             <div><h3 className="text-sm font-medium text-[#f6ead8]">Optional background cutout</h3><p className="mt-1 text-xs leading-5 text-[#bba995]">Enter a short item name, then inspect the generated preview.</p></div>
             <div className="flex min-w-0 max-w-full flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
               <Input value={cutoutPrompt} onChange={(event) => setCutoutPrompt(event.target.value)} maxLength={80} placeholder="Short item name, e.g. desk chair" className="bg-[#1a100c]" />
@@ -318,7 +358,16 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
               <fieldset className="space-y-2"><legend className="text-xs font-medium text-[#f6ead8]">Display on listing</legend><div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">{([['original','Photo'],['cutout','Cutout'],['both','Both']] as const).map(([value,label]) => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#1a100c] px-3 py-2 text-xs text-[#e1d2c0] ring-1 ring-[#4a3025]/60 has-[:checked]:ring-[#e6c79c]"><input type="radio" name="photo-display-mode" value={value} checked={photoDisplayMode===value} disabled={value !== "original" && !previewLoaded} onChange={() => { setPhotoDisplayMode(value); setConfirmed(false); }} />{label}</label>)}</div></fieldset>
             </div>}
             {!cutoutAvailable && canWrite && <p className="text-xs text-[#bba995]">Cutout generation is currently unavailable. You can still publish the uploaded photo.</p>}
-          </div>
+          </div>}
+          {lockPhoto && cutout && <div className="space-y-3 border-t border-[#4a3025]/60 pt-5">
+            <div><h3 className="text-sm font-medium text-[#f6ead8]">Selected item cutout</h3><p className="mt-1 text-xs leading-5 text-[#bba995]">This listing keeps the shared original photo and the cutout you selected.</p></div>
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#1a100c] ring-1 ring-[#75513e]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img key={previewIdentity} src={cutout.cutout_url} alt="Selected item cutout preview" className="relative h-full w-full object-contain" onLoad={() => { if (previewIdentity) setLoadedPreviewIdentity(previewIdentity); }} onError={() => { setLoadedPreviewIdentity(null); setPhotoDisplayMode("original"); setCutoutError("The generated preview could not be loaded. Choose Original only or return to the marked items."); }} />
+            </div>
+            {cutoutError && <p role="alert" className="text-xs leading-5 text-amber-300">{cutoutError}</p>}
+            <fieldset className="space-y-2"><legend className="text-xs font-medium text-[#f6ead8]">Display on listing</legend><div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">{([['original','Photo'],['cutout','Cutout'],['both','Both']] as const).map(([value,label]) => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#1a100c] px-3 py-2 text-xs text-[#e1d2c0] ring-1 ring-[#4a3025]/60 has-[:checked]:ring-[#e6c79c]"><input type="radio" name="photo-display-mode" value={value} checked={photoDisplayMode===value} disabled={value !== "original" && !previewLoaded} onChange={() => { setPhotoDisplayMode(value); setConfirmed(false); }} />{label}</label>)}</div></fieldset>
+          </div>}
         </section>
 
         <div className="min-w-0 max-w-full space-y-6">
@@ -445,7 +494,7 @@ export function SellForm({ initialListing }: { initialListing?: Record<string, u
 
           <div className="flex flex-wrap gap-2 pt-1">
             <Button type="submit" variant="primary" disabled={submitting || !canWrite || !imagePath || !confirmed || uploading}>{submitting ? "Saving…" : initialListing ? "Save changes" : "Publish listing"}</Button>
-            <Button type="button" variant="ghost" onClick={()=>router.back()}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={()=>onCancel ? onCancel() : router.back()}>Cancel</Button>
           </div>
           </section>
         </div>

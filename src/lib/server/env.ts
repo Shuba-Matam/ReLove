@@ -110,6 +110,10 @@ export function getAiFeatureAvailability() {
   return { ...features, any: Object.values(features).some(Boolean), provider: displayProvider, providerValid, moderationNote: "moderation disabled: app-only Meta intent, no approved moderation selector; charging Baseten coding pool prohibited" };
 }
 
+export function isMultiCutoutEnabled(): boolean {
+  return process.env.AI_MULTI_CUTOUT_ENABLED?.trim().toLowerCase() === "true";
+}
+
 export function getAiEnabled(): boolean {
   return getAiFeatureAvailability().any;
 }

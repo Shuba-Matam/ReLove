@@ -55,6 +55,7 @@ Validated:
   SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY fallback) required in live
   GOOGLE_AUTH_ENABLED     true|false (live expects true)
   AI_ENABLED              true|false (current release expects false)
+  AI_MULTI_CUTOUT_ENABLED true|false (optional multi-item box flow; defaults false)
   AI_DAILY_LIMIT          integer 0..1000 (0=off, default 50 if unset)
   AI_USER_DAILY_LIMIT     integer 0..1000 (0=off, default 15 if unset)
   AI_OWNER_DAILY_LIMIT    optional integer 1..1000 (allowlisted owner; falls back to user limit)
@@ -381,6 +382,11 @@ async function main() {
   } else {
     infos.push("AI_ENABLED unset — defaults to disabled");
   }
+  const multiCutoutRaw = env.AI_MULTI_CUTOUT_ENABLED;
+  const multiCutoutFlag = isTruthyFlag(multiCutoutRaw);
+  if (multiCutoutRaw !== undefined && multiCutoutFlag === null) errors.push("AI_MULTI_CUTOUT_ENABLED must be true|false if set");
+  else infos.push(`AI_MULTI_CUTOUT_ENABLED=${multiCutoutFlag === true ? "true" : "false"}`);
+  if (multiCutoutFlag === true && aiFlag !== true) warnings.push("AI_MULTI_CUTOUT_ENABLED=true while AI_ENABLED is off — the route remains unavailable until both are enabled");
 
   // 5. AI caps — actual vars from src/lib/ai/context.ts
   const dailyRes = validateNumericCap("AI_DAILY_LIMIT", env.AI_DAILY_LIMIT, " (50)");
@@ -525,6 +531,7 @@ async function main() {
         SUPABASE_ANON_KEY: maskPresence(env.SUPABASE_ANON_KEY),
         GOOGLE_AUTH_ENABLED: maskPresence(env.GOOGLE_AUTH_ENABLED),
         AI_ENABLED: maskPresence(env.AI_ENABLED),
+        AI_MULTI_CUTOUT_ENABLED: maskPresence(env.AI_MULTI_CUTOUT_ENABLED),
         AI_DAILY_LIMIT: maskPresence(env.AI_DAILY_LIMIT),
         AI_USER_DAILY_LIMIT: maskPresence(env.AI_USER_DAILY_LIMIT),
         AI_OWNER_DAILY_LIMIT: maskPresence(env.AI_OWNER_DAILY_LIMIT),

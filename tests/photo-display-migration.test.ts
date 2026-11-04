@@ -114,4 +114,36 @@ describe("listing photo display migration proposal", () => {
       await db.query("select set_config('request.jwt.claim.sub','',false)");
     }
   });
+  it("allows two independent listings to share one original with separate completed cutout operations", async () => {
+    const imagePath = `${seller}/12121212-1212-4212-8212-121212121212.jpg`;
+    const imageUrl = `https://example.supabase.co/storage/v1/object/public/listing-images/${imagePath}`;
+    const cutoutPaths = [
+      `${seller}/13131313-1313-4313-8313-131313131313.jpg`,
+      `${seller}/14141414-1414-4414-8414-141414141414.jpg`,
+    ];
+    await db.query("insert into storage.objects(bucket_id,name) values('listing-images',$1),('listing-images',$2),('listing-images',$3)", [imagePath, cutoutPaths[0], cutoutPaths[1]]);
+    await db.exec("set role service_role");
+    const operations: string[] = [];
+    for (let index = 0; index < cutoutPaths.length; index++) {
+      const cutoutUrl = `https://example.supabase.co/storage/v1/object/public/listing-images/${cutoutPaths[index]}`;
+      const inserted = await db.query<{ id: string }>(`insert into public.ai_operations(user_id,feature,idempotency_key,source_hash,provider,model,price_micro_usd,status,result,attempt_count)
+        values($1,'cutout',$2,$3,'meta','sam-3.1',10000,'done',$4::jsonb,1) returning id`, [seller, `shared-${index}`, `shared-source-${index}-abcdef`, JSON.stringify({ status: "done", source_image_path: imagePath, cutout_path: cutoutPaths[index], cutout_url: cutoutUrl, item_id: `item-${index}`, box: { left: index * 10, top: 0, right: 50 + index * 10, bottom: 50 } })]);
+      operations.push(inserted.rows[0].id);
+    }
+    await db.exec("reset role");
+    await db.exec("set role authenticated");
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [seller]);
+    try {
+      for (let index = 0; index < 2; index++) {
+        const cutoutUrl = `https://example.supabase.co/storage/v1/object/public/listing-images/${cutoutPaths[index]}`;
+        await expect(db.query(`insert into public.listings(seller_id,category_id,title,description,price_inr,condition,hostel_block,image_path,image_url,cutout_path,cutout_url,cutout_operation_id,photo_display_mode,ai_status)
+          values($1,$2,$3,'A separately described sale item.',1000,'good','A',$4,$5,$6,$7,$8,'both','done')`, [seller, category, `Shared item ${index + 1}`, imagePath, imageUrl, cutoutPaths[index], cutoutUrl, operations[index]])).resolves.toBeDefined();
+      }
+      const result = await db.query<{ count: bigint }>("select count(*) from public.listings where image_path=$1", [imagePath]);
+      expect(Number(result.rows[0].count)).toBe(2);
+    } finally {
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.sub','',false)");
+    }
+  });
 });

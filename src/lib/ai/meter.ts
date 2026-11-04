@@ -151,6 +151,30 @@ export async function meterComplete(args: {
   await bounded.catch(() => undefined);
 }
 
+/** Completion variant for flows that must not expose a derived artifact until the ledger is durably done. */
+export async function meterCompleteChecked(args: {
+  client: ReturnType<typeof createMeteringClient>;
+  userId: string;
+  attemptId: string;
+  ok: boolean;
+  ms: number;
+  result?: unknown;
+}): Promise<void> {
+  if (!args.client || !args.attemptId) throw new Error("AI_COMPLETE_UNAVAILABLE");
+  const response = await withTimeout(
+    (args.client.rpc as unknown as (fn: string, p: unknown) => Promise<{ error: unknown }>)('complete_ai_attempt', {
+      p_user_id: args.userId,
+      p_attempt_id: args.attemptId,
+      p_ok: args.ok,
+      p_ms: Math.max(0, Math.min(60000, Math.round(args.ms))),
+      p_result: args.result ?? null,
+    }),
+    COMPLETE_TIMEOUT_MS,
+    "AI_COMPLETE_TIMEOUT",
+  );
+  if (response.error) throw new Error("AI_COMPLETE_FAILED");
+}
+
 export const pricebookRowSchema = z.object({
   feature: z.string(),
   provider: z.string(),

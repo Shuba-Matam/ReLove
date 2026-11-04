@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/server/supabase";
-import { getAiFeatureAvailability, getAppMode, getOwnerAllowlist, isAiTestMode, isAuthConfigured } from "@/lib/server/env";
+import { getAiFeatureAvailability, getAppMode, getOwnerAllowlist, isAiTestMode, isAuthConfigured, isMultiCutoutEnabled } from "@/lib/server/env";
 import { json, withApi } from "@/lib/server/http";
 import type { Profile, SessionInfo } from "@/lib/marketplace";
 
@@ -10,6 +10,7 @@ export const GET = withApi(async () => {
   const mode = getAppMode();
   const auth_configured = isAuthConfigured();
   const availability = getAiFeatureAvailability();
+  const multi_cutout_enabled = isMultiCutoutEnabled();
   let ai_enabled = availability.any;
   let ai_features = { draft: availability.draft, transcribe: availability.transcribe, cutout: availability.cutout, moderation: availability.moderation } as const;
   const ai_provider = availability.provider;
@@ -18,10 +19,10 @@ export const GET = withApi(async () => {
   const ai_metering_configured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
   const ai_hard_budget_ready = ai_metering_configured;
 
-  if (mode !== "live") return json({ user: null, mode, ai_enabled: false, auth_configured: false, ai_features: { draft: false, transcribe: false, cutout: false, moderation: false }, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready });
+  if (mode !== "live") return json({ user: null, mode, ai_enabled: false, auth_configured: false, ai_features: { draft: false, transcribe: false, cutout: false, moderation: false }, multi_cutout_enabled: false, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready });
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    const data = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
+    const data = { user: null, mode, ai_enabled, auth_configured, ai_features, multi_cutout_enabled, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
     return json(data);
   }
 
@@ -40,7 +41,7 @@ export const GET = withApi(async () => {
   }
 
   if (!authUser) {
-    const data = { user: null, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
+    const data = { user: null, mode, ai_enabled, auth_configured, ai_features, multi_cutout_enabled, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
     return json(data);
   }
 
@@ -71,6 +72,6 @@ export const GET = withApi(async () => {
     };
   }
 
-  const data = { user, mode, ai_enabled, auth_configured, ai_features, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
+  const data = { user, mode, ai_enabled, auth_configured, ai_features, multi_cutout_enabled: multi_cutout_enabled && ai_features.cutout, ai_provider, ai_hard_budget, ai_metering_configured, ai_hard_budget_ready } as SessionInfo & Record<string, unknown>;
   return json(data);
 });
