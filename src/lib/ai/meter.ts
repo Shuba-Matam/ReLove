@@ -47,7 +47,7 @@ const RESERVE_TIMEOUT_MS = 4000;
 const COMPLETE_TIMEOUT_MS = 2500;
 
 export class MeterCompletionError extends Error {
-  constructor(public certainty: "definite" | "uncertain", code: string) {
+  constructor(code: string) {
     super(code);
     this.name = "MeterCompletionError";
   }
@@ -167,7 +167,7 @@ export async function meterCompleteChecked(args: {
   ms: number;
   result?: unknown;
 }): Promise<void> {
-  if (!args.client || !args.attemptId) throw new MeterCompletionError("definite", "AI_COMPLETE_UNAVAILABLE");
+  if (!args.client || !args.attemptId) throw new MeterCompletionError("AI_COMPLETE_UNAVAILABLE");
   let response: { error: unknown };
   try {
     response = await withTimeout(
@@ -183,9 +183,11 @@ export async function meterCompleteChecked(args: {
     );
   } catch {
     // Timeout/transport rejection is uncertain: the uncancelled RPC may commit later.
-    throw new MeterCompletionError("uncertain", "AI_COMPLETE_UNCERTAIN");
+    throw new MeterCompletionError("AI_COMPLETE_UNCERTAIN");
   }
-  if (response.error) throw new MeterCompletionError("definite", "AI_COMPLETE_REJECTED");
+  // PostgREST resolves transport failures as { error, status: 0 }, and even an
+  // ordinary error response can race a commit. Every completion error requires read-back.
+  if (response.error) throw new MeterCompletionError("AI_COMPLETE_UNCERTAIN");
 }
 
 export type MeterCompletionState = {
@@ -199,15 +201,16 @@ export async function readMeterCompletion(args: {
   userId: string;
   attemptId: string;
   operationId: string;
+  timeoutMs?: number;
 }): Promise<MeterCompletionState> {
   if (!args.client) return { state: "indeterminate", result: null };
   type Query = { select: (columns: string) => Query; eq: (column: string, value: string) => Query; maybeSingle: () => Promise<{ data: unknown; error: unknown }> };
   try {
-    const from = args.client.from as unknown as (table: string) => Query;
-    const [attemptResponse, operationResponse] = await Promise.all([
-      from("ai_attempts").select("id,operation_id,user_id,ok,completed_at").eq("id", args.attemptId).eq("user_id", args.userId).maybeSingle(),
-      from("ai_operations").select("id,user_id,feature,status,result").eq("id", args.operationId).eq("user_id", args.userId).eq("feature", "cutout").maybeSingle(),
-    ]);
+    // Keep the Supabase method bound to its client; detached `from` loses `this.rest`.
+    const [attemptResponse, operationResponse] = await withTimeout(Promise.all([
+      (args.client.from("ai_attempts") as unknown as Query).select("id,operation_id,user_id,ok,completed_at").eq("id", args.attemptId).eq("user_id", args.userId).maybeSingle(),
+      (args.client.from("ai_operations") as unknown as Query).select("id,user_id,feature,status,result").eq("id", args.operationId).eq("user_id", args.userId).eq("feature", "cutout").maybeSingle(),
+    ]), Math.max(1, Math.min(2500, args.timeoutMs ?? 1200)), "AI_COMPLETE_READBACK_TIMEOUT");
     if (attemptResponse.error || operationResponse.error || !attemptResponse.data || !operationResponse.data) return { state: "indeterminate", result: null };
     const attempt = z.object({
       id: z.string().uuid(), operation_id: z.string().uuid(), user_id: z.string().uuid(), ok: z.boolean().nullable(), completed_at: z.union([z.string(), z.date()]).nullable(),

@@ -892,7 +892,7 @@ describe("real prepublish cutout POST via production route", () => {
     expect((makeBoxCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(0);
   });
 
-  it("box cutout removes the derived file on a definite rejected completion", async () => {
+  it("box cutout removes the derived file only after authoritative failed readback", async () => {
     const imagePath = `${seller}/${randomUUID()}.jpg`;
     await seedImage(seller, imagePath, 100, 100);
     const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
@@ -903,9 +903,11 @@ describe("real prepublish cutout POST via production route", () => {
     (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
     const metering = createMockMeteringClient();
     const originalRpc = metering.rpc;
-    metering.rpc = async (fn: string, params: Record<string, unknown>) => fn === "complete_ai_attempt"
-      ? { data: null, error: { message: "completion failed" } }
-      : originalRpc(fn, params);
+    metering.rpc = async (fn: string, params: Record<string, unknown>) => {
+      if (fn !== "complete_ai_attempt") return originalRpc(fn, params);
+      await asService("select public.complete_ai_attempt($1,$2,false,$3,null)", [seller, params.p_attempt_id, params.p_ms]);
+      return { data: null, error: { message: "reply lost after failed completion" }, status: 0 };
+    };
     (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(metering);
     (makeBoxCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ processed, maskCount: 1, coverage: 0.2, components: 1 });
     const before = new Set(storageMap.keys());
