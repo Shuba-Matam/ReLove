@@ -15,9 +15,15 @@ A student marketplace for giving pre-loved items a new home. Built with Next.js 
 
 ## Status and boundaries
 
-The application includes the live marketplace flows, Google sign-in integration, Supabase-backed listings and conversations, image storage, optional AI assistance, demo mode, privacy information, and PWA assets. Production configuration and database state are operational concerns outside the repository, so source defaults remain conservative and AI stays fail-closed when credentials, settings, pricebook rows, or budgets are unavailable.
+The current release is deployed at [re-love-pi.vercel.app](https://re-love-pi.vercel.app). Supabase migrations through `005_messaging_notifications.sql` are applied, and commit `20880c6eecc90fe2ec588f113d667c01b9d9a2f6` was deployed on November 5, 2026. The production deployment has Google login and the configured Meta AI features enabled.
 
-The deployed environment must set its own authentication, provider, and feature flags. Production read-only checks can verify configuration and availability without making provider calls, but real-account writes, provider outputs, and mobile behavior still require explicit release verification. This repository does not apply remote schema changes or deploy itself.
+Repository defaults remain conservative: AI features fail closed unless credentials, feature settings, pricebook rows, and database budgets are available, and Google login requires the readiness flag plus provider configuration. Deployments manage their own environment settings and schema application; the repository does not apply remote changes or deploy itself.
+
+## Current scope
+
+- Notifications are in-app while Re-Love is open; closed-app push is not included.
+- Multi-item cutouts require manual box marking for up to three items; automatic object discovery is not included.
+- Signed-in users can edit their profile, but self-service account deletion is not implemented.
 
 ## Run locally
 
@@ -31,7 +37,7 @@ npm run dev
 
 PowerShell can use Copy-Item .env.example .env.local instead of cp. Do not overwrite an existing credential file. APP_MODE=demo runs the read-only sample marketplace without contacting Supabase or AI providers. The twenty fictional listing records use original SVG illustrations; they are not real listings or photos supplied by sellers.
 
-To connect the actual marketplace, apply the approved SQL files in order through an authorized deployment workflow, set APP_MODE=live, configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY on the server, and enable the Google readiness flag. Supabase redirect allowlists must include the deployment's /auth/callback path and localhost during development. The Google OAuth client redirects to the Supabase Auth callback, not directly to the app.
+To connect the actual marketplace, apply the SQL files in order through the deployment workflow, set APP_MODE=live, configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY for the deployment, and enable the Google readiness flag. Supabase redirect allowlists must include the deployment's /auth/callback path and localhost during development. The Google OAuth client redirects to the Supabase Auth callback, not directly to the app.
 
 ## Server environment
 
@@ -39,7 +45,7 @@ To connect the actual marketplace, apply the approved SQL files in order through
 | --- | --- |
 | APP_MODE | demo (read only), live (database), or setup (unavailable) |
 | SUPABASE_URL | Supabase project origin |
-| SUPABASE_PUBLISHABLE_KEY | Supabase app key, used only by server code with RLS |
+| SUPABASE_PUBLISHABLE_KEY | Supabase public app key used by server routes and the authenticated browser realtime bootstrap, with RLS enforcing access |
 | GOOGLE_AUTH_ENABLED | true once the Google provider and callback allowlist are ready |
 | AI_ENABLED | Master switch; keep false until provider checks pass |
 | AI_MULTI_CUTOUT_ENABLED | Independent server-side switch for the optional up-to-3 box-marking flow; defaults false |
@@ -56,7 +62,7 @@ To connect the actual marketplace, apply the approved SQL files in order through
 
 Secrets remain server-side. The authenticated realtime bootstrap returns only the current verified user's short-lived access token, expiry, Supabase URL, and public key. The access token stays in memory and is renewed through the same authenticated route before expiry. The HTTP-only refresh credential is never returned to JavaScript. RLS scopes Postgres Changes, and disconnect clears the browser client immediately. No service role reaches the browser. Google client secret belongs in Supabase's provider configuration, not the frontend. Development coding agents and their credentials are separate from the models called by the running Re-Love app.
 
-Apply `supabase/migrations-draft/005_messaging_notifications.sql` after the earlier migrations. It contains only in-app messaging support: action idempotency, inbox/read RPCs, supporting indexes, and Supabase Realtime publication. No VAPID keys, notification permission, scheduler, or external push service is required.
+`supabase/migrations-draft/005_messaging_notifications.sql` adds in-app messaging support: action idempotency, inbox/read RPCs, supporting indexes, and Supabase Realtime publication. No VAPID keys, notification permission, scheduler, or external push service is required.
 
 ## Architecture
 
@@ -102,17 +108,10 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+# optional dependency review
 npm audit --omit=dev
 ~~~
 
-Tests execute the actual migrations in PGlite with three independent user identities and Supabase auth/storage stubs. They exercise hidden listing privacy, unauthorized writes, source image rules, full-text tags, message isolation/read receipts, reports, and AI caps. Additional tests cover malformed drafts, invalid input, redirects/CSRF, timeouts, retry bounds, kill switch, and mask validation.
+The November 5, 2026 release evidence records 240 application baseline tests, 68 release checks, 33 focused timestamp follow-up tests, typecheck and build passes, CI success, deployment success, and a live smoke pass. Real temporary signed-in accounts, created through test auth sessions, verified incoming messages without refresh, duplicate replay returning the same message ID, mismatch `409`, outsider `404` with no realtime events, inbox RPC behavior, read-receipt endpoints, and the notification controller against live data with an unread-count increment and toast.
 
-A production HTTP pass checks demo filters/pagination, source detail, clear missing-listing state, session, mutation rejection, privacy/PWA assets, and live schema-unavailable errors. No browser visual test or real phone test is claimed. Next.js may stream a missing page with HTTP 200 plus its not-found view; the data endpoint correctly returns 404.
-
-The production dependency audit passes with zero known vulnerabilities. The development lint toolchain still inherits a moderate minimatch advisory; no forced major override was used because its call contract differs between dependencies.
-
-For provider smoke testing, use a real owned upload and an authenticated test account. Set SMOKE_SESSION_COOKIE privately and run npm run smoke:ai -- <owned-upload-path>; this goes through the normal app guard and reports only status and suggested field names. Run ten owner-supplied original photos, including hard cases, then English/Tamil/mixed recordings and the failure checklist. The app is usable manually while AI is disabled.
-
-## Still to verify before release
-
-Approved migrations on Supabase, two-account Google sign-in, live message/reconnect/read-receipt checks, RLS/storage checks, same-site cookies on the live domain, real-phone layouts, provider access and ten-photo results, final privacy review, and owner-supplied seed photos remain release verification items. In-app alerts work only while Re-Love is open; closed-app push is not claimed. Do not pass illustrations off as seller photographs. A signed-in user can edit their profile; self-service account deletion is not implemented. The public GitHub issues page is the approved contact for requesting a private follow-up, not a place for private data.
+The native browser check used the real backend and realtime path. Responsive layouts were checked at 320, 360, and 390 pixel widths. This verification did not establish physical-phone behavior, repeat two fresh Google OAuth walkthroughs, run a mandatory ten-photo benchmark, or perform a comprehensive privacy or compliance audit.
