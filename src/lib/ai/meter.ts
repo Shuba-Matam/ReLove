@@ -46,6 +46,13 @@ const reserveRowSchema = z.object({
 const RESERVE_TIMEOUT_MS = 4000;
 const COMPLETE_TIMEOUT_MS = 2500;
 
+export class MeterCompletionError extends Error {
+  constructor(public certainty: "definite" | "uncertain", code: string) {
+    super(code);
+    this.name = "MeterCompletionError";
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -160,19 +167,63 @@ export async function meterCompleteChecked(args: {
   ms: number;
   result?: unknown;
 }): Promise<void> {
-  if (!args.client || !args.attemptId) throw new Error("AI_COMPLETE_UNAVAILABLE");
-  const response = await withTimeout(
-    (args.client.rpc as unknown as (fn: string, p: unknown) => Promise<{ error: unknown }>)('complete_ai_attempt', {
-      p_user_id: args.userId,
-      p_attempt_id: args.attemptId,
-      p_ok: args.ok,
-      p_ms: Math.max(0, Math.min(60000, Math.round(args.ms))),
-      p_result: args.result ?? null,
-    }),
-    COMPLETE_TIMEOUT_MS,
-    "AI_COMPLETE_TIMEOUT",
-  );
-  if (response.error) throw new Error("AI_COMPLETE_FAILED");
+  if (!args.client || !args.attemptId) throw new MeterCompletionError("definite", "AI_COMPLETE_UNAVAILABLE");
+  let response: { error: unknown };
+  try {
+    response = await withTimeout(
+      (args.client.rpc as unknown as (fn: string, p: unknown) => Promise<{ error: unknown }>)('complete_ai_attempt', {
+        p_user_id: args.userId,
+        p_attempt_id: args.attemptId,
+        p_ok: args.ok,
+        p_ms: Math.max(0, Math.min(60000, Math.round(args.ms))),
+        p_result: args.result ?? null,
+      }),
+      COMPLETE_TIMEOUT_MS,
+      "AI_COMPLETE_TIMEOUT",
+    );
+  } catch {
+    // Timeout/transport rejection is uncertain: the uncancelled RPC may commit later.
+    throw new MeterCompletionError("uncertain", "AI_COMPLETE_UNCERTAIN");
+  }
+  if (response.error) throw new MeterCompletionError("definite", "AI_COMPLETE_REJECTED");
+}
+
+export type MeterCompletionState = {
+  state: "done" | "failed" | "pending" | "indeterminate";
+  result: unknown | null;
+};
+
+/** Read back the exact attempt and operation after an uncertain completion outcome. */
+export async function readMeterCompletion(args: {
+  client: ReturnType<typeof createMeteringClient>;
+  userId: string;
+  attemptId: string;
+  operationId: string;
+}): Promise<MeterCompletionState> {
+  if (!args.client) return { state: "indeterminate", result: null };
+  type Query = { select: (columns: string) => Query; eq: (column: string, value: string) => Query; maybeSingle: () => Promise<{ data: unknown; error: unknown }> };
+  try {
+    const from = args.client.from as unknown as (table: string) => Query;
+    const [attemptResponse, operationResponse] = await Promise.all([
+      from("ai_attempts").select("id,operation_id,user_id,ok,completed_at").eq("id", args.attemptId).eq("user_id", args.userId).maybeSingle(),
+      from("ai_operations").select("id,user_id,feature,status,result").eq("id", args.operationId).eq("user_id", args.userId).eq("feature", "cutout").maybeSingle(),
+    ]);
+    if (attemptResponse.error || operationResponse.error || !attemptResponse.data || !operationResponse.data) return { state: "indeterminate", result: null };
+    const attempt = z.object({
+      id: z.string().uuid(), operation_id: z.string().uuid(), user_id: z.string().uuid(), ok: z.boolean().nullable(), completed_at: z.union([z.string(), z.date()]).nullable(),
+    }).safeParse(attemptResponse.data);
+    const operation = z.object({
+      id: z.string().uuid(), user_id: z.string().uuid(), feature: z.literal("cutout"), status: z.enum(["pending", "done", "failed"]), result: z.unknown().nullable(),
+    }).safeParse(operationResponse.data);
+    if (!attempt.success || !operation.success || attempt.data.operation_id !== operation.data.id || operation.data.id !== args.operationId) {
+      return { state: "indeterminate", result: null };
+    }
+    if (attempt.data.completed_at && attempt.data.ok === true && operation.data.status === "done") return { state: "done", result: operation.data.result };
+    if (attempt.data.completed_at && attempt.data.ok === false && operation.data.status === "failed") return { state: "failed", result: operation.data.result };
+    return { state: "pending", result: operation.data.result };
+  } catch {
+    return { state: "indeterminate", result: null };
+  }
 }
 
 export const pricebookRowSchema = z.object({

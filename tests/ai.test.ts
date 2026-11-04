@@ -164,6 +164,52 @@ describe("cutout mask quality", () => {
       globalThis.fetch = originalFetch;
     }
   });
+  it("makes a real box-prompt SAM cutout with object 1 and keeps an irregular off-origin mask aligned", async () => {
+    const outputText = '<0f>1<|box;x1=29;y1=41;x2=88;y2=67;w=120;h=100|>' +
+      "<|mask;x=0;y=0;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7`e.ioeAf6-k/#Xd8%dX9x(|>\n";
+    const events = [
+      { type: "response.output_text.delta", item_id: "message-1", output_index: 0, content_index: 0, delta: outputText },
+      { type: "response.output_text.done", item_id: "message-1", output_index: 0, content_index: 0, text: outputText },
+      { type: "response.completed" },
+    ];
+    const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+    const original = await sharp({ create: { width: 120, height: 100, channels: 3, background: { r: 185, g: 30, b: 35 } } }).jpeg().toBuffer();
+    const parsed = await parseImageStream((async function* () { for (const event of events) yield event; })()).finalResult;
+    const record = recordsOfKind(parsed.records, "mask")[0];
+    const raster = decodeMaskToRaster(record.mask);
+    const surroundedIndex = (value: 0 | 1) => raster.findIndex((pixel, index) => {
+      const x = index % record.mask.width; const y = Math.floor(index / record.mask.width);
+      if (pixel !== value || x < 1 || y < 1 || x >= record.mask.width - 1 || y >= record.mask.height - 1) return false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (raster[(y + dy) * record.mask.width + x + dx] !== value) return false;
+      return true;
+    });
+    const foreground = surroundedIndex(1);
+    const background = surroundedIndex(0);
+    expect(foreground).toBeGreaterThanOrEqual(0);
+    expect(background).toBeGreaterThanOrEqual(0);
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async () => new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const { makeBoxCutout } = await import("@/lib/ai/cutout");
+      const result = await makeBoxCutout({ original, box: { left: 20, top: 30, right: 100, bottom: 80 }, key: "offline-test", signal: new AbortController().signal });
+      const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      const requestBody = JSON.parse(String(call[1].body));
+      expect(requestBody.input[0].content[0].text).toBe("<0f>1<|box;x1=20;y1=30;x2=99;y2=79;w=120;h=100|>");
+      const { data } = await sharp(result.processed).raw().toBuffer({ resolveWithObject: true });
+      const outputPixel = (index: number) => {
+        const x = record.bounds.left + index % record.mask.width;
+        const y = record.bounds.top + Math.floor(index / record.mask.width);
+        return Array.from(data.subarray((y * 120 + x) * 3, (y * 120 + x) * 3 + 3));
+      };
+      expect(outputPixel(foreground)[0]).toBeGreaterThan(140);
+      expect(outputPixel(background)[0]).toBeGreaterThan(220);
+      expect(record.objectId).toBe("1");
+      expect(record.frame?.frameIndex ?? 0).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 describe("audio validation", () => {
   it("accepts Meta response metadata without returning it to the browser", () => {

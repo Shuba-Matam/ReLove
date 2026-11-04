@@ -3,7 +3,7 @@ import { buildObjectPrompt, type SegmentationMaskRecord } from "@meta-sam/parser
 import { AiFailure } from "@/lib/ai/guard";
 import { selectBoxMaskRecord } from "@/lib/ai/cutout";
 import { isMultiCutoutEnabled } from "@/lib/server/env";
-import { MULTI_CUTOUT_SCALE, containedImageRect, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint } from "@/lib/client/multi-cutout";
+import { MULTI_CUTOUT_SCALE, containedImageRect, defaultItemBox, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint } from "@/lib/client/multi-cutout";
 
 function fakeMask(objectId: string, frameIndex?: number): SegmentationMaskRecord {
   return {
@@ -60,5 +60,10 @@ describe("multi-cutout object-contain coordinates", () => {
   it("rejects tiny/nonempty mistakes and supports numeric bounds", () => {
     expect(normalizeDraggedBox({ x: 100, y: 100 }, { x: 200, y: 200 })).toBeNull();
     expect(percentBoundsToBox({ left: 10, top: 20, right: 90, bottom: 80 })).toEqual({ left: 100000, top: 200000, right: 900000, bottom: 800000 });
+  });
+
+  it("provides useful default boxes for keyboard-created items", () => {
+    expect(defaultItemBox(1)).toEqual({ left: 150000, top: 150000, right: 850000, bottom: 850000 });
+    expect(defaultItemBox(3)).toEqual({ left: 250000, top: 250000, right: 750000, bottom: 750000 });
   });
 });

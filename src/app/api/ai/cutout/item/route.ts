@@ -3,7 +3,7 @@ import { z } from "zod";
 import { assertOwnerTestGate, assertTrustedBounds, requireAiContext } from "@/lib/ai/context";
 import { makeBoxCutout, type NativeCutoutBox } from "@/lib/ai/cutout";
 import { AiFailure } from "@/lib/ai/guard";
-import { meterCompleteChecked } from "@/lib/ai/meter";
+import { MeterCompletionError, meterCompleteChecked, readMeterCompletion } from "@/lib/ai/meter";
 import { PROVIDER_LIMITS } from "@/lib/ai/provider";
 import { isMultiCutoutEnabled } from "@/lib/server/env";
 import { ApiProblem, assertSameOrigin, json, readJson, withApi } from "@/lib/server/http";
@@ -188,10 +188,34 @@ export const POST = withApi(async (request: Request) => {
     });
     try {
       await meterCompleteChecked({ client: meteringClient, userId: user.id, attemptId, ok: true, ms: Math.min(60000, Date.now() - started), result });
-    } catch {
+    } catch (error) {
+      if (error instanceof MeterCompletionError && error.certainty === "uncertain") {
+        let completion = await readMeterCompletion({ client: meteringClient, userId: user.id, attemptId, operationId });
+        if (completion.state === "pending") {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          completion = await readMeterCompletion({ client: meteringClient, userId: user.id, attemptId, operationId });
+        }
+        const reconciled = resultSchema.safeParse(completion.result);
+        const exactDone = completion.state === "done" && reconciled.success
+          && reconciled.data.source_image_path === result.source_image_path
+          && reconciled.data.cutout_path === result.cutout_path
+          && reconciled.data.cutout_url === result.cutout_url
+          && JSON.stringify(reconciled.data.box) === JSON.stringify(result.box);
+        if (exactDone) {
+          logStage({ stage: "done", requestId, operationId, code: "METER_RECONCILED_DONE", elapsedMs: Date.now() - started, width, height, maskCount: providerResult.maskCount, coverage: providerResult.coverage, components: providerResult.components });
+          return json({ ...result, operation_id: operationId });
+        }
+        if (completion.state === "failed") {
+          await supabase.storage.from("listing-images").remove([uploaded]).catch(() => undefined);
+          logStage({ stage: "meter_complete", requestId, operationId, code: "METER_RECONCILED_FAILED", elapsedMs: Date.now() - started, width, height });
+          throw new ApiProblem(503, "AI_UNAVAILABLE", "The cutout could not be finalized. Try again later.");
+        }
+        logStage({ stage: "meter_complete", requestId, operationId, code: "METER_COMPLETE_UNCERTAIN", elapsedMs: Date.now() - started, width, height });
+        throw new ApiProblem(503, "AI_FINALIZING", "The cutout may still be finishing. Wait a moment, then retry this item.");
+      }
       await supabase.storage.from("listing-images").remove([uploaded]).catch(() => undefined);
-      logStage({ stage: "meter_complete", requestId, operationId, code: "METER_COMPLETE_FAILED", elapsedMs: Date.now() - started, width, height });
-      throw new ApiProblem(503, "AI_UNAVAILABLE", "The cutout could not be finalized safely. Generate it again later.");
+      logStage({ stage: "meter_complete", requestId, operationId, code: "METER_COMPLETE_REJECTED", elapsedMs: Date.now() - started, width, height });
+      throw new ApiProblem(503, "AI_UNAVAILABLE", "The cutout could not be finalized. Try again later.");
     }
     logStage({ stage: "done", requestId, operationId, code: "DONE", elapsedMs: Date.now() - started, width, height, maskCount: providerResult.maskCount, coverage: providerResult.coverage, components: providerResult.components });
     return json({ ...result, operation_id: operationId });

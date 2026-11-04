@@ -2,6 +2,11 @@ export const MULTI_CUTOUT_SCALE = 1_000_000;
 
 export type NormalizedCutoutBox = { left: number; top: number; right: number; bottom: number };
 
+export function defaultItemBox(number: number): NormalizedCutoutBox {
+  const offset = Math.max(0, Math.min(2, number - 1)) * 50000;
+  return { left: 150000 + offset, top: 150000 + offset, right: 850000 - offset, bottom: 850000 - offset };
+}
+
 export function containedImageRect(containerWidth: number, containerHeight: number, imageWidth: number, imageHeight: number) {
   if (![containerWidth, containerHeight, imageWidth, imageHeight].every((value) => Number.isFinite(value) && value > 0)) return null;
   const scale = Math.min(containerWidth / imageWidth, containerHeight / imageHeight);

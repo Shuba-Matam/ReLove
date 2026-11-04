@@ -229,21 +229,21 @@ function createMockSupabase(userId: string) {
 
 function createMockMeteringClient() {
   return {
-    from: (table: string) => ({
-      select: (cols: string) => ({
-        eq: (col: string, val: string) => ({
-          maybeSingle: async () => {
-            if (table === "ai_pricebook") {
-              const res = await asService(`select ${cols} from public.ai_pricebook where ${col}=$1`, [val]);
-              const row = res.rows[0] as Record<string, unknown> | undefined;
-              if (!row) return { data: null, error: null };
-              return { data: row, error: null };
-            }
-            return { data: null, error: null };
-          },
-        }),
-      }),
-    }),
+    from: (table: string) => {
+      const state = { columns: "*", filters: [] as Array<{ column: string; value: string }> };
+      const builder = {
+        select: (columns: string) => { state.columns = columns; return builder; },
+        eq: (column: string, value: string) => { state.filters.push({ column, value }); return builder; },
+        maybeSingle: async () => {
+          if (!["ai_pricebook", "ai_attempts", "ai_operations"].includes(table)) return { data: null, error: null };
+          const params = state.filters.map((filter) => filter.value);
+          const where = state.filters.length ? ` where ${state.filters.map((filter, index) => `${filter.column}=$${index + 1}`).join(" and ")}` : "";
+          const res = await asService(`select ${state.columns} from public.${table}${where}`, params);
+          return { data: (res.rows[0] as Record<string, unknown> | undefined) ?? null, error: null };
+        },
+      };
+      return builder;
+    },
     rpc: async (fn: string, params: Record<string, unknown>) => {
       const keys = Object.keys(params);
       const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
@@ -892,7 +892,7 @@ describe("real prepublish cutout POST via production route", () => {
     expect((makeBoxCutout as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(0);
   });
 
-  it("box cutout fails closed when completion fails and removes the derived file", async () => {
+  it("box cutout removes the derived file on a definite rejected completion", async () => {
     const imagePath = `${seller}/${randomUUID()}.jpg`;
     await seedImage(seller, imagePath, 100, 100);
     const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
@@ -914,6 +914,58 @@ describe("real prepublish cutout POST via production route", () => {
     expect(response.status).toBe(503);
     expect([...storageMap.keys()].filter((path) => !before.has(path))).toHaveLength(0);
   });
+
+  it("box cutout reconciles an uncertain completion that committed late and keeps the durable file", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath, 100, 100);
+    const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { makeBoxCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    const metering = createMockMeteringClient();
+    const originalRpc = metering.rpc;
+    metering.rpc = async (fn: string, params: Record<string, unknown>) => {
+      if (fn !== "complete_ai_attempt") return originalRpc(fn, params);
+      await new Promise((resolve) => setTimeout(resolve, 2600));
+      return originalRpc(fn, params);
+    };
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(metering);
+    (makeBoxCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ processed, maskCount: 1, coverage: 0.2, components: 1 });
+    const { POST } = await import("@/app/api/ai/cutout/item/route");
+    const response = await POST(makeRequest("http://localhost:3000/api/ai/cutout/item", { image_path: imagePath, item_id: "item-late", box: { left: 100000, top: 100000, right: 900000, bottom: 900000 } }));
+    expect(response.status).toBe(200);
+    const body = await response.json() as { data: { cutout_path: string; operation_id: string } };
+    expect(storageMap.has(body.data.cutout_path)).toBe(true);
+    const operation = await asService("select status,result from public.ai_operations where id=$1", [body.data.operation_id]);
+    expect(operation.rows[0]).toMatchObject({ status: "done" });
+  }, 10000);
+
+  it("box cutout retains the file and fails retry-later when uncertain completion is still indeterminate", async () => {
+    const imagePath = `${seller}/${randomUUID()}.jpg`;
+    await seedImage(seller, imagePath, 100, 100);
+    const processed = await sharp({ create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } } }).jpeg().toBuffer();
+    const { requireUser } = await import("@/lib/server/auth");
+    const { createMeteringClient } = await import("@/lib/ai/meter");
+    const { makeBoxCutout } = await import("@/lib/ai/cutout");
+    const mockSupabase = createMockSupabase(seller);
+    (requireUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ user: { id: seller, email: "seller@test" }, supabase: mockSupabase });
+    const metering = createMockMeteringClient();
+    const originalRpc = metering.rpc;
+    metering.rpc = async (fn: string, params: Record<string, unknown>) => fn === "complete_ai_attempt"
+      ? new Promise(() => {})
+      : originalRpc(fn, params);
+    (createMeteringClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(metering);
+    (makeBoxCutout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ processed, maskCount: 1, coverage: 0.2, components: 1 });
+    const before = new Set(storageMap.keys());
+    const { POST } = await import("@/app/api/ai/cutout/item/route");
+    const response = await POST(makeRequest("http://localhost:3000/api/ai/cutout/item", { image_path: imagePath, item_id: "item-pending", box: { left: 100000, top: 100000, right: 900000, bottom: 900000 } }));
+    expect(response.status).toBe(503);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("AI_FINALIZING");
+    expect([...storageMap.keys()].filter((path) => !before.has(path))).toHaveLength(1);
+  }, 10000);
   it("generates before publication without inserting or mutating a listing", async () => {
     const listingId = randomUUID();
     const imagePathA = `${seller}/${randomUUID()}.jpg`;
