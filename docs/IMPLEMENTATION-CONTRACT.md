@@ -15,7 +15,8 @@ Endpoints:
 - `GET /api/threads/:id` -> ThreadDetail; `POST /api/threads/:id/messages` `{ body }` -> Message; `POST /api/threads/:id/read` marks received messages read -> `{ updated: true }`. Refresh on window focus, no realtime.
 - `POST /api/reports` reportSchema -> `{ submitted: true }`.
 - `GET /api/health` -> non-secret status, readiness. 503 for unavailable live schema.
-- `POST /api/ai/draft` `{ image_path?, transcript? }` -> `{ draft, suggested_fields }`. Draft nullable fields: title, category_slug, description, condition_hint, brand, edition; tags array. No price suggestions. 401/429/503 return manual fallback message.
+- `POST /api/ai/draft` `{ image_path?, transcript?, image_context? }` -> `{ draft, suggested_fields }`. Draft nullable fields: title, category_slug, description, condition_hint, brand, edition; tags array; optional bounded `feedback.missing_details` and `feedback.photo_guidance`. No price suggestions. Explicit user action only. 401/429/503 return manual fallback message.
+- `GET /api/ai/usage` -> authenticated account attempt count and daily remaining tries with UTC reset time plus generic shared/provider availability. It exposes no provider billing balance, credentials, owner identity, or other users' data.
 - `POST /api/ai/transcribe` multipart `file` -> `{ transcript }`. This may return unavailable until a verified provider is configured; text entry always works.
 - `POST /api/ai/cutout` `{ listing_id }` -> `{ status }`. Optional and off until provider ready.
 

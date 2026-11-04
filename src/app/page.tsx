@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { CategoryChips } from "@/components/listings/category-chips";
 import { Filters } from "@/components/listings/filters";
 import { ListingFeed } from "@/components/listings/listing-feed";
 import { Button } from "@/components/ui/button";
@@ -26,11 +25,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-      <Suspense fallback={<div className="h-9" />}>
-        <CategoryChips />
-      </Suspense>
       <Suspense fallback={<div className="h-10 rounded-xl bg-[#1a100c]" />}>
-        <Filters />
+        <Filters includeCategories />
       </Suspense>
       <Suspense fallback={<p className="py-6 text-sm text-[#bba995]">Loading your finds…</p>}>
         <ListingFeed />

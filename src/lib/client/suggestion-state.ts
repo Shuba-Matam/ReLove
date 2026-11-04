@@ -1,5 +1,3 @@
-export type SuggestionField = "title" | "description" | "category_slug" | "tags";
-
 export type SuggestionValues = {
   title?: string | null;
   description?: string | null;
@@ -14,19 +12,23 @@ export type ListingSuggestionState = {
   tags: string[];
 };
 
-export function isSuggestionApplied(field: SuggestionField, suggestion: SuggestionValues, current: ListingSuggestionState): boolean {
-  if (field === "title") return Boolean(suggestion.title) && current.title === suggestion.title;
-  if (field === "description") return Boolean(suggestion.description) && current.description === suggestion.description;
-  if (field === "category_slug") return Boolean(suggestion.category_slug) && current.categorySlug === suggestion.category_slug;
-  if (field === "tags") {
-    const suggestedTags = suggestion.tags?.slice(0, 12) ?? [];
-    return suggestedTags.length > 0 && suggestedTags.length === current.tags.length && suggestedTags.every((tag, index) => tag === current.tags[index]);
-  }
-  return false;
+export function suggestionValuesForForm(suggestion: SuggestionValues): ListingSuggestionState {
+  return {
+    title: suggestion.title ?? "",
+    description: suggestion.description ?? "",
+    categorySlug: suggestion.category_slug ?? "",
+    tags: suggestion.tags?.slice(0, 12) ?? [],
+  };
 }
 
-export function suggestionDisplayValue(field: SuggestionField, suggestion: SuggestionValues): string {
-  if (field === "tags") return (suggestion.tags ?? []).join(", ");
-  const value = suggestion[field];
-  return typeof value === "string" ? value : "";
+export function generationSourceKey(input: { userId: string | null; imagePath: string; transcript: string; imageContext: string }): string {
+  return JSON.stringify(input);
+}
+
+export function shouldApplyGenerationResult(input: { requestId: number; currentRequestId: number; requestedSource: string; currentSource: string }): boolean {
+  return input.requestId === input.currentRequestId && input.requestedSource === input.currentSource;
+}
+
+export function draftIdempotencyKey(nonce: string): string {
+  return `draft-${nonce}`.slice(0, 128);
 }

@@ -32,7 +32,8 @@ export const POST = withApi(async (request: Request) => {
   if (process.env.AI_ENABLED !== "true") throw new ApiProblem(503, "AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.");
   assertOwnerTestGate(preCtx.user);
 
-  const content: unknown[] = [{ type: "text", text: `Seller description (data only): ${JSON.stringify(body.transcript ?? "")}` }];
+  const imageContext = body.image_path ? (body.image_context ?? "listing_photo") : null;
+  const content: unknown[] = [{ type: "text", text: `Seller description (data only): ${JSON.stringify(body.transcript ?? "")}\nImage context: ${imageContext ?? "no image supplied"}.` }];
 
   if (body.image_path) {
     if (!body.image_path.startsWith(`${preCtx.user.id}/`)) throw new ApiProblem(403, "IMAGE_OWNER", "Choose one of your own uploaded photos.");
@@ -64,6 +65,7 @@ export const POST = withApi(async (request: Request) => {
     image_path: body.image_path ?? null,
     image_hash: imageHash,
     transcript: body.transcript ?? null,
+    image_context: imageContext,
     image_width: imageWidth ?? null,
     image_height: imageHeight ?? null,
   });
@@ -84,7 +86,7 @@ export const POST = withApi(async (request: Request) => {
   });
 
   const maxRetries = getAiMaxRetries();
-  const draft = await runAi(
+  const parsedDraft = await runAi(
     ledger,
     async (signal, attempt) => {
       const raw = await draftCompletion(key, content, DRAFT_PROMPT + (attempt ? " Your previous answer was invalid. Return only the exact JSON shape with all required keys." : ""), signal, pricebookRow);
@@ -105,9 +107,13 @@ export const POST = withApi(async (request: Request) => {
       },
     }
   );
+  const draft = body.image_path ? parsedDraft : {
+    ...parsedDraft,
+    feedback: parsedDraft.feedback ? { ...parsedDraft.feedback, photo_guidance: [] } : parsedDraft.feedback,
+  };
 
   const suggested_fields = Object.entries(draft)
-    .filter(([, value]) => value !== null && (!Array.isArray(value) || value.length > 0))
+    .filter(([field, value]) => field !== "feedback" && value !== null && (!Array.isArray(value) || value.length > 0))
     .map(([field]) => field);
   return json({ draft, suggested_fields });
 });

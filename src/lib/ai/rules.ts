@@ -1,7 +1,7 @@
 export function priceWarning(price: number): string | null {
   if (!Number.isSafeInteger(price) || price < 0) return "Use a whole rupee amount of zero or more.";
   if (price === 0) return "This item will be listed as free.";
-  if (price > 200000) return "This price is unusually high for a campus listing. Check the amount.";
+  if (price > 200000) return "This price seems high. Are you sure about it?";
   return null;
 }
 

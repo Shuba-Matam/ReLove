@@ -7,7 +7,8 @@ import { SellForm, type SellFormSeed } from "@/components/forms/sell-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { compressImage, formatBytes } from "@/lib/client/compress";
-import { boxToPercent, containedImageRect, defaultItemBox, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint, type NormalizedCutoutBox } from "@/lib/client/multi-cutout";
+import { aiUsageMessage, useAiUsage } from "@/lib/client/ai-usage";
+import { boxToPercent, containedImageRect, defaultItemBox, derivedCutoutPathToDiscard, normalizeDraggedBox, percentBoundsToBox, pointToNormalizedBoxPoint, type NormalizedCutoutBox } from "@/lib/client/multi-cutout";
 import { useSession } from "@/lib/client/session";
 
 type CutoutResult = { operation_id: string; source_image_path: string; cutout_path: string; cutout_url: string; item_id: string };
@@ -25,6 +26,11 @@ type Candidate = {
   listingId: string | null;
 };
 
+function invalidateCandidate(candidate: Candidate, box: NormalizedCutoutBox): Candidate {
+  if (candidate.phase === "published") return candidate;
+  return { ...candidate, box, phase: "marked", result: null, previewLoaded: false, previewVersion: candidate.previewVersion + 1, error: "", errorCode: "" };
+}
+
 const STOP_QUEUE_CODES = new Set(["AI_DISABLED", "AI_LIMIT", "AI_LIMIT_UNAVAILABLE", "AI_UNAVAILABLE", "AI_CREDENTIALS", "AI_PAYMENT", "AI_FORBIDDEN", "MULTI_CUTOUT_DISABLED"]);
 
 function newCandidate(box: NormalizedCutoutBox, number: number): Candidate {
@@ -36,6 +42,7 @@ export function MultiCutoutSell() {
   const { session, loading: sessionLoading } = useSession();
   const canWrite = session?.mode === "live" && Boolean(session.user);
   const available = Boolean(session?.multi_cutout_enabled && session?.ai_features?.cutout);
+  const { usage: aiUsage, unavailable: aiUsageUnavailable, refresh: refreshAiUsage } = useAiUsage(session?.user?.id);
   const [imagePath, setImagePath] = React.useState("");
   const [imageUrl, setImageUrl] = React.useState("");
   const [imageSize, setImageSize] = React.useState({ width: 0, height: 0 });
@@ -45,6 +52,7 @@ export function MultiCutoutSell() {
   const [pageError, setPageError] = React.useState("");
   const [candidates, setCandidates] = React.useState<Candidate[]>([]);
   const [draftBox, setDraftBox] = React.useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
+  const [redrawCandidateId, setRedrawCandidateId] = React.useState<string | null>(null);
   const [activeCandidateId, setActiveCandidateId] = React.useState<string | null>(null);
   const [queueRunning, setQueueRunning] = React.useState(false);
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
@@ -79,6 +87,7 @@ export function MultiCutoutSell() {
       setCandidates([]);
       setActiveCandidateId(null);
       setDraftBox(null);
+      setRedrawCandidateId(null);
       setUploadInfo("");
       setPageError("");
       setUploading(false);
@@ -125,6 +134,7 @@ export function MultiCutoutSell() {
       setCandidates([]);
       setActiveCandidateId(null);
       setDraftBox(null);
+      setRedrawCandidateId(null);
       setUploadInfo("Photo uploaded. Mark up to 3 items before generating cutouts.");
     } catch (error) {
       if (mountedRef.current && uploadVersionRef.current === uploadVersion && !uploadController.signal.aborted) setPageError(error instanceof Error ? error.message : "Upload failed.");
@@ -152,7 +162,8 @@ export function MultiCutoutSell() {
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!imagePath || candidates.length >= 3 || queueRunning) return;
+    if ((event.target as HTMLElement).closest("button")) return;
+    if (!imagePath || (!redrawCandidateId && candidates.length >= 3) || queueRunning) return;
     const point = pointFromEvent(event);
     if (!point) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -173,16 +184,34 @@ export function MultiCutoutSell() {
     setDraftBox(null);
     if (!box) { setPageError("Draw a larger box fully inside the photo."); return; }
     setPageError("");
+    if (redrawCandidateId) discardCutout(candidates.find((candidate) => candidate.id === redrawCandidateId)?.result ?? null);
     setCandidates((current) => {
+      if (redrawCandidateId) return current.map((candidate) => candidate.id === redrawCandidateId ? invalidateCandidate(candidate, box) : candidate);
       if (current.length >= 3) return current;
       const used = new Set(current.map((candidate) => candidate.number));
       const number = [1, 2, 3].find((value) => !used.has(value)) ?? current.length + 1;
       return [...current, newCandidate(box, number)];
     });
+    setRedrawCandidateId(null);
   }
 
   function updateCandidate(id: string, update: (candidate: Candidate) => Candidate) {
     setCandidates((current) => current.map((candidate) => candidate.id === id ? update(candidate) : candidate));
+  }
+
+  function discardCutout(result: CutoutResult | null) {
+    const path = derivedCutoutPathToDiscard(imagePath, result?.cutout_path);
+    if (!path) return;
+    void fetch("/api/uploads", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) }).catch(() => undefined);
+  }
+
+  function removeCandidate(id: string) {
+    const candidate = candidates.find((item) => item.id === id);
+    if (!candidate || candidate.phase === "published" || candidate.phase === "pending" || queueRunning) return;
+    discardCutout(candidate.result);
+    setCandidates((current) => current.filter((item) => item.id !== id));
+    if (activeCandidateId === id) setActiveCandidateId(null);
+    if (redrawCandidateId === id) setRedrawCandidateId(null);
   }
 
   function addDefaultBox() {
@@ -221,6 +250,8 @@ export function MultiCutoutSell() {
       const code = (error as Error & { code?: string }).code ?? "CUTOUT_FAILED";
       updateCandidate(candidateId, (item) => ({ ...item, phase: "error", error: error instanceof Error ? error.message : "Cutout unavailable.", errorCode: code }));
       return STOP_QUEUE_CODES.has(code) ? code : null;
+    } finally {
+      void refreshAiUsage();
     }
   }
 
@@ -270,40 +301,42 @@ export function MultiCutoutSell() {
     {!available && !sessionLoading && <p role="alert" className="rounded-xl bg-[#32171a] p-3 text-sm leading-5 text-[#f1c7bd] ring-1 ring-[#6b3434]">Multiple-item cutouts are currently off. The regular <Link className="underline underline-offset-4" href="/sell">single-item sell form</Link> is still available.</p>}
 
     <section className="space-y-4 rounded-[1.5rem] bg-[#241712] p-4 ring-1 ring-[#4a3025]/60 sm:p-5">
-      <div><h2 className="text-base font-semibold text-[#f6ead8]">1. Upload one photo</h2><p className="mt-1 text-xs leading-5 text-[#bba995]">Upload once, then make a separate listing for each marked item.</p></div>
+      <div><h2 className="text-base font-semibold text-[#f6ead8]">1. Upload one photo</h2><p className="mt-1 text-xs leading-5 text-[#bba995]">Upload one JPG or PNG, then make a separate listing for each marked item.</p></div>
       <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#1a100c] px-4 py-2 text-sm text-[#f6ead8] ring-1 ring-[#4a3025] hover:ring-[#ead7b7]">
         <Upload className="size-4" /> {uploading ? "Uploading…" : imagePath ? "Replace original" : "Choose photo"}
-        <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFile} disabled={!canWrite || !available || uploading || queueRunning} />
+        <input className="sr-only" type="file" accept="image/jpeg,image/png" onChange={handleFile} disabled={!canWrite || !available || uploading || queueRunning} />
       </label>
       {uploadInfo && <p role="status" className="text-xs text-[#bba995]">{uploadInfo}</p>}
       {pageError && <p role="alert" className="text-xs leading-5 text-amber-300">{pageError}</p>}
     </section>
 
     {imageUrl && <section className="space-y-4 rounded-[1.5rem] bg-[#241712] p-4 ring-1 ring-[#4a3025]/60 sm:p-5">
-      <div><h2 className="text-base font-semibold text-[#f6ead8]">2. Mark up to 3 items</h2><p className="mt-1 text-xs leading-5 text-[#bba995]">Drag around an item, or add a box and edit its numbers.</p></div>
+      <div><h2 className="text-base font-semibold text-[#f6ead8]">2. Mark up to 3 items</h2><p className="mt-1 text-xs leading-5 text-[#bba995]">Drag around an item. Select Edit / Redraw to replace one box. Numeric bounds remain available for keyboard adjustment.</p></div>
       <div ref={surfaceRef} className="relative aspect-[4/3] touch-none overflow-hidden rounded-2xl bg-[#1a100c] ring-1 ring-[#75513e] select-none" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={() => setDraftBox(null)} aria-label="Photo marking surface">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={imageUrl} alt="Uploaded photo for marking items" draggable={false} className="pointer-events-none h-full w-full object-contain" onLoad={(event) => setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
         {displayedImage && <div className="pointer-events-none absolute" style={{ left: displayedImage.left, top: displayedImage.top, width: displayedImage.width, height: displayedImage.height }}>
-          {candidates.map((candidate) => { const box = boxToPercent(candidate.box); return <div key={candidate.id} className="absolute border-2 border-[#ead7b7] bg-[#ead7b7]/10" style={{ left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%` }}><span className="absolute left-0 top-0 bg-[#ead7b7] px-1.5 py-0.5 text-[10px] font-semibold text-[#241712]">{candidate.number}</span></div>; })}
+          {candidates.map((candidate) => { const box = boxToPercent(candidate.box); const locked = queueRunning || candidate.phase === "pending" || candidate.phase === "published"; return <div key={candidate.id} className={`absolute border-2 bg-[#ead7b7]/10 ${redrawCandidateId === candidate.id ? "border-white border-dashed" : "border-[#ead7b7]"}`} style={{ left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%` }}><span className="absolute left-0 top-0 bg-[#ead7b7] px-1.5 py-0.5 text-[10px] font-semibold text-[#241712]">{candidate.number}</span><button type="button" disabled={locked} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeCandidate(candidate.id); }} aria-label={`Remove ${candidate.label || `item ${candidate.number}`} box`} title={locked ? "This box is locked while processing or after publication." : "Remove this box"} className="pointer-events-auto absolute right-1 top-1 grid size-11 place-items-center rounded-full bg-[#32171a] text-white ring-2 ring-[#f1c7bd] disabled:cursor-not-allowed disabled:opacity-50"><X className="size-5" /></button></div>; })}
           {draftPercent && <div className="absolute border-2 border-dashed border-white bg-white/10" style={{ left: `${draftPercent.left}%`, top: `${draftPercent.top}%`, width: `${draftPercent.width}%`, height: `${draftPercent.height}%` }} />}
         </div>}
         {candidates.length === 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center"><span className="rounded-full bg-black/65 px-3 py-2 text-xs text-white"><BoxSelect className="mr-1 inline size-4" /> Drag around an item</span></div>}
       </div>
-      <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="secondary" size="sm" onClick={addDefaultBox} disabled={candidates.length >= 3 || queueRunning}><BoxSelect /> Add item box</Button><p className="text-xs text-[#bba995]">{candidates.length}/3 items marked.</p></div>
+      <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="secondary" size="sm" onClick={addDefaultBox} disabled={candidates.length >= 3 || queueRunning || Boolean(redrawCandidateId)}><BoxSelect /> Add item box</Button>{redrawCandidateId && <Button type="button" variant="ghost" size="sm" onClick={() => setRedrawCandidateId(null)}>Cancel redraw</Button>}<p className="text-xs text-[#bba995]">{redrawCandidateId ? "Drag a new box for the selected item." : `${candidates.length}/3 items marked.`}</p></div>
       <div className="grid gap-3 lg:grid-cols-3">{candidates.map((candidate) => {
         const percent = boxToPercent(candidate.box);
         return <article key={candidate.id} className="space-y-3 rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/60">
-          <div className="flex items-center gap-2"><Input aria-label={`Item ${candidate.number} label`} value={candidate.label} maxLength={40} onChange={(event) => updateCandidate(candidate.id, (item) => ({ ...item, label: event.target.value }))} className="h-8 bg-[#241712]" /><button type="button" aria-label={`Remove ${candidate.label || `item ${candidate.number}`}`} className="rounded-full p-1 text-[#bba995] hover:bg-[#241712] hover:text-white" disabled={queueRunning || candidate.phase === "published"} onClick={() => { setCandidates((current) => current.filter((item) => item.id !== candidate.id)); if (activeCandidateId === candidate.id) setActiveCandidateId(null); }}><X className="size-4" /></button></div>
-          <fieldset className="grid grid-cols-2 gap-2"><legend className="col-span-2 text-[11px] text-[#bba995]">Accessible bounds (% of actual photo)</legend>{(["left", "top", "right", "bottom"] as const).map((edge) => <label key={edge} className="text-[10px] uppercase tracking-wide text-[#8f7d6d]">{edge}<Input type="number" min={0} max={100} step="0.1" value={(edge === "right" ? percent.left + percent.width : edge === "bottom" ? percent.top + percent.height : percent[edge]).toFixed(1)} onChange={(event) => {
+          <div className="flex items-center gap-2"><Input aria-label={`Item ${candidate.number} label`} value={candidate.label} maxLength={40} onChange={(event) => updateCandidate(candidate.id, (item) => ({ ...item, label: event.target.value }))} className="h-8 bg-[#241712]" /><Button type="button" variant={redrawCandidateId === candidate.id ? "primary" : "secondary"} size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => setRedrawCandidateId(candidate.id)}>Edit / Redraw</Button></div>
+          <fieldset className="grid grid-cols-2 gap-2"><legend className="col-span-2 text-[11px] text-[#bba995]">Box bounds, percent of photo</legend>{(["left", "top", "right", "bottom"] as const).map((edge) => <label key={edge} className="text-[10px] uppercase tracking-wide text-[#8f7d6d]">{edge}<Input type="number" min={0} max={100} step="0.1" value={(edge === "right" ? percent.left + percent.width : edge === "bottom" ? percent.top + percent.height : percent[edge]).toFixed(1)} onChange={(event) => {
             const values = { left: percent.left, top: percent.top, right: percent.left + percent.width, bottom: percent.top + percent.height, [edge]: Number(event.target.value) };
             const next = percentBoundsToBox(values);
-            if (next) updateCandidate(candidate.id, (item) => ({ ...item, box: next, phase: item.phase === "published" ? item.phase : "marked", result: item.phase === "published" ? item.result : null, previewLoaded: false, previewVersion: item.previewVersion + 1, error: "", errorCode: "" }));
-          }} disabled={queueRunning || candidate.phase === "published"} className="mt-1 h-8 bg-[#241712]" /></label>)}</fieldset>
-          <Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "published"} onClick={() => updateCandidate(candidate.id, (item) => ({ ...item, box: defaultItemBox(item.number), phase: "marked", result: null, previewLoaded: false, previewVersion: item.previewVersion + 1, error: "", errorCode: "" }))}>Reset bounds</Button>
+            if (next) { discardCutout(candidate.result); updateCandidate(candidate.id, (item) => invalidateCandidate(item, next)); }
+          }} disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} className="mt-1 h-8 bg-[#241712]" /></label>)}</fieldset>
+          <div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => { discardCutout(candidate.result); updateCandidate(candidate.id, (item) => invalidateCandidate(item, defaultItemBox(item.number))); }}>Reset bounds</Button><Button type="button" variant="ghost" size="sm" disabled={queueRunning || candidate.phase === "pending" || candidate.phase === "published"} onClick={() => removeCandidate(candidate.id)}><X /> Remove box</Button></div>
+          {(candidate.phase === "pending" || candidate.phase === "published") && <p className="text-[11px] text-[#bba995]">{candidate.phase === "published" ? "Published boxes are locked." : "Box controls are locked while this item is processing."}</p>}
         </article>;
       })}</div>
       <Button type="button" variant="primary" onClick={generateAll} disabled={!available || queueRunning || !candidates.some((candidate) => candidate.phase === "marked" || candidate.phase === "error")}>{queueRunning ? <><LoaderCircle className="animate-spin" /> Generating sequentially…</> : "Generate marked cutouts"}</Button>
+      {aiUsageMessage(aiUsage, aiUsageUnavailable) && <p className="text-[11px] leading-5 text-[#bba995]">{aiUsageMessage(aiUsage, aiUsageUnavailable)}</p>}
       <p className="text-[11px] leading-5 text-[#bba995]">Each new cutout uses 1 AI try. A failed item retries only when you choose Retry.</p>
       <p className="text-[11px] font-medium leading-5 text-amber-300">Finish before leaving; unfinished work isn&apos;t saved.</p>
     </section>}

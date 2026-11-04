@@ -36,6 +36,18 @@ describe("AI draft validation and seller authority", () => {
     const parsed = parseAiDraft(raw);
     expect(parsed.tags).toEqual(["chair", "seat"]);
   });
+  it("supports bounded feedback and accepts legacy cached drafts without feedback", () => {
+    expect(parseAiDraft(JSON.stringify(draft)).feedback).toBeUndefined();
+    const result = parseAiDraft(JSON.stringify({
+      ...draft,
+      feedback: {
+        missing_details: ["Is the charger included?", "Is the charger included?"],
+        photo_guidance: ["The item is small in the frame."],
+      },
+    }));
+    expect(result.feedback).toEqual({ missing_details: ["Is the charger included?"], photo_guidance: ["The item is small in the frame."] });
+    expect(() => parseAiDraft(JSON.stringify({ ...draft, feedback: { missing_details: ["x".repeat(141)], photo_guidance: [] } }))).toThrow();
+  });
   it("rejects extra keys like price even when wrapped in markdown", () => {
     expect(() => parseAiDraft("```json\n" + JSON.stringify({ ...draft, price_inr: 100 }) + "\n```")).toThrow();
   });

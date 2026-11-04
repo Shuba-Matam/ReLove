@@ -28,13 +28,13 @@ export function assertOwnerTestGate(user: { id: string; email?: string | null })
  */
 export type AiFeature = "draft" | "transcribe" | "cutout" | "moderation";
 
-function cap(name: string, fallback: number) {
+export function aiLimitCap(name: string, fallback: number) {
   const value = Number(process.env[name] ?? fallback);
   return Number.isSafeInteger(value) && value > 0 ? Math.min(value, 1000) : 0;
 }
 
-function userDailyLimit(user: { id: string; email?: string | null }): number {
-  const regularLimit = cap("AI_USER_DAILY_LIMIT", 15);
+export function getAiUserDailyLimit(user: { id: string; email?: string | null }): number {
+  const regularLimit = aiLimitCap("AI_USER_DAILY_LIMIT", 15);
   if (!regularLimit || !isAllowedOwner(user.email, user.id)) return regularLimit;
   const rawOwnerLimit = process.env.AI_OWNER_DAILY_LIMIT;
   if (rawOwnerLimit === undefined) return regularLimit;
@@ -54,8 +54,8 @@ export async function requireAiContext(feature: AiFeature, opts?: { sourceHash?:
   assertOwnerTestGate(context.user);
   const key = keyForFeature(feature);
   if (!key) throw new ApiProblem(503, "AI_UNAVAILABLE", "AI assistance is not configured. You can continue manually.");
-  const daily = cap("AI_DAILY_LIMIT", 50);
-  const userLimit = userDailyLimit(context.user);
+  const daily = aiLimitCap("AI_DAILY_LIMIT", 50);
+  const userLimit = getAiUserDailyLimit(context.user);
   if (!daily || !userLimit) throw new ApiProblem(503, "AI_DISABLED", "AI assistance is off. You can fill in the listing yourself.");
 
   const meteringClient = createMeteringClient();

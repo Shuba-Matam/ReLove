@@ -6,10 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CONDITIONS, CONDITION_LABELS } from "@/lib/marketplace";
+import { CategoryChips } from "@/components/listings/category-chips";
+import { SlidersHorizontal } from "lucide-react";
 
-export function Filters() { const sp = useSearchParams(); return <FilterForm key={sp.toString()} />; }
+export function Filters({ includeCategories = false }: { includeCategories?: boolean }) { const sp = useSearchParams(); return <FilterForm key={sp.toString()} includeCategories={includeCategories} />; }
 
-function FilterForm() {
+function FilterForm({ includeCategories }: { includeCategories: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -20,6 +22,7 @@ function FilterForm() {
   const [min, setMin] = React.useState(sp.get("min_price") ?? "");
   const [max, setMax] = React.useState(sp.get("max_price") ?? "");
   const [sort, setSort] = React.useState(sp.get("sort") ?? "newest");
+  const activeCount = [sp.get("category"), sp.get("condition"), sp.get("hostel_block"), sp.get("min_price"), sp.get("max_price"), sp.get("sort")].filter(Boolean).length;
 
 
   function apply(e?: React.FormEvent) {
@@ -44,7 +47,13 @@ function FilterForm() {
   }
 
   return (
-    <form onSubmit={apply} className="flex flex-col gap-3">
+    <details className="group rounded-2xl bg-[#241712] ring-1 ring-[#4a3025]/60">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium text-[#f6ead8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2"><SlidersHorizontal className="size-4 text-[#ead7b7]" /> Filter {activeCount > 0 && <span className="rounded-full bg-[#ead7b7] px-2 py-0.5 text-[10px] font-semibold text-[#241712]">{activeCount}</span>}</span>
+        <span className="text-xs text-[#bba995] group-open:hidden">Show</span><span className="hidden text-xs text-[#bba995] group-open:inline">Hide</span>
+      </summary>
+      <form onSubmit={apply} className="flex flex-col gap-4 border-t border-[#4a3025]/50 p-4">
+      {includeCategories && <CategoryChips />}
       <div className="flex flex-wrap gap-2">
         <div className="min-w-[180px] flex-1">
           <Label htmlFor="f-q" className="sr-only">Search</Label>
@@ -69,6 +78,7 @@ function FilterForm() {
           <Button type="button" variant="ghost" size="sm" className="h-9" onClick={clear}>Clear</Button>
         </div>
       </div>
-    </form>
+      </form>
+    </details>
   );
 }

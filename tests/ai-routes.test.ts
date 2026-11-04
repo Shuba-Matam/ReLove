@@ -563,7 +563,7 @@ describe("real draft POST via production route (cap429, payment503, timeout503, 
         input: [
           { role: "system", content: [{ type: "input_text", text: DRAFT_PROMPT }] },
           { role: "user", content: [
-            { type: "input_text", text: 'Seller description (data only): "blue chair"' },
+            { type: "input_text", text: 'Seller description (data only): "blue chair"\nImage context: listing_photo.' },
             { type: "input_image", image_url: `data:image/jpeg;base64,${image.toString("base64")}` },
           ] },
         ],
@@ -577,7 +577,7 @@ describe("real draft POST via production route (cap429, payment503, timeout503, 
       expect(generationBody.messages).toEqual([
         { role: "system", content: DRAFT_PROMPT },
         { role: "user", content: [
-          { type: "text", text: 'Seller description (data only): "blue chair"' },
+          { type: "text", text: 'Seller description (data only): "blue chair"\nImage context: listing_photo.' },
           { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image.toString("base64")}` } },
         ] },
       ]);

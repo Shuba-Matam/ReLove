@@ -7,8 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { SuggestionRow } from "@/components/forms/suggestion-row";
 import { CATEGORIES, CONDITIONS, CONDITION_LABELS } from "@/lib/marketplace";
 import { recordingToWav } from "@/lib/client/audio";
 import { formatVoiceElapsed, VoiceRecorderController, type VoicePhase } from "@/lib/client/voice-recorder";
@@ -16,12 +14,22 @@ import { listingSchema } from "@/lib/validation";
 import { priceWarning as validatePrice } from "@/lib/ai/rules";
 import { compressImage, formatBytes } from "@/lib/client/compress";
 import { cutoutPreviewIdentity, reconcileLoadedPreview } from "@/lib/client/cutout-preview";
-import { isSuggestionApplied, suggestionDisplayValue, type SuggestionField } from "@/lib/client/suggestion-state";
+import { draftIdempotencyKey, generationSourceKey, shouldApplyGenerationResult, suggestionValuesForForm } from "@/lib/client/suggestion-state";
+import { aiUsageMessage, useAiUsage } from "@/lib/client/ai-usage";
 import { useSession } from "@/lib/client/session";
 import { Mic, Sparkles, Upload, X, AlertTriangle, LoaderCircle, Square } from "lucide-react";
 
 type DraftSuggestion = {
-  draft: { title?: string | null; category_slug?: string | null; description?: string | null; condition_hint?: string | null; brand?: string | null; edition?: string | null; tags?: string[] | null };
+  draft: {
+    title?: string | null;
+    category_slug?: string | null;
+    description?: string | null;
+    condition_hint?: string | null;
+    brand?: string | null;
+    edition?: string | null;
+    tags?: string[] | null;
+    feedback?: { missing_details: string[]; photo_guidance: string[] };
+  };
   suggested_fields: string[];
 };
 
@@ -59,6 +67,7 @@ export function SellForm({
   const voiceAvailable = session?.ai_features?.transcribe ?? session?.ai_enabled ?? false;
   const anyAi = session?.ai_features ? (session.ai_features.draft || session.ai_features.transcribe || session.ai_features.cutout) : (session?.ai_enabled ?? false);
   const cutoutAvailable = session?.ai_features?.cutout ?? session?.ai_enabled ?? false;
+  const { usage: aiUsage, unavailable: aiUsageUnavailable, refresh: refreshAiUsage } = useAiUsage(session?.user?.id);
 
   const [title, setTitle] = React.useState((initialListing?.title as string) ?? initialData?.title ?? "");
   const [description, setDescription] = React.useState((initialListing?.description as string) ?? "");
@@ -93,9 +102,8 @@ export function SellForm({
   const [transcript, setTranscript] = React.useState("");
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiError, setAiError] = React.useState("");
-  const [suggestedFields, setSuggestedFields] = React.useState<string[]>([]);
-  const [aiDraft, setAiDraft] = React.useState<DraftSuggestion["draft"] | null>(null);
-  const [applyAnnouncement, setApplyAnnouncement] = React.useState("");
+  const [aiStatus, setAiStatus] = React.useState("");
+  const [aiFeedback, setAiFeedback] = React.useState<DraftSuggestion["draft"]["feedback"] | null>(null);
 
   const [voicePhase, setVoicePhase] = React.useState<VoicePhase>("idle");
   const [voiceElapsed, setVoiceElapsed] = React.useState(0);
@@ -103,6 +111,9 @@ export function SellForm({
   const [voiceAnalyserAvailable, setVoiceAnalyserAvailable] = React.useState(false);
   const voiceRecorderRef = React.useRef<VoiceRecorderController | null>(null);
   const imagePathRef = React.useRef(imagePath);
+  const transcriptRef = React.useRef(transcript);
+  const sessionUserRef = React.useRef(session?.user?.id ?? null);
+  const generationRequestRef = React.useRef(0);
   const previousSessionUserRef = React.useRef<string | null | undefined>(undefined);
 
   const priceNum = Number(price);
@@ -110,12 +121,14 @@ export function SellForm({
   const previewIdentity = cutout ? cutoutPreviewIdentity(cutout) : null;
   const previewLoaded = previewIdentity !== null && loadedPreviewIdentity === previewIdentity;
   React.useEffect(() => { imagePathRef.current = imagePath; }, [imagePath]);
+  React.useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
+  React.useEffect(() => { sessionUserRef.current = session?.user?.id ?? null; }, [session?.user?.id]);
   React.useEffect(() => {
     const currentUserId = session?.user?.id ?? null;
     if (previousSessionUserRef.current !== undefined && previousSessionUserRef.current !== currentUserId) {
-      setAiDraft(null);
-      setSuggestedFields([]);
-      setApplyAnnouncement("");
+      generationRequestRef.current++;
+      setAiStatus("");
+      setAiFeedback(null);
       setAiError("");
       setCutoutError("");
       setConfirmed(false);
@@ -130,14 +143,18 @@ export function SellForm({
       onAnalyserChange: setVoiceAnalyserAvailable,
       onError: setAiError,
       onRecording: async (blob) => {
-        const wav = await recordingToWav(blob);
-        const fd = new FormData();
-        fd.append("file", wav);
-        const res = await fetch("/api/ai/transcribe", { method: "POST", body: fd });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error?.message ?? "Transcription unavailable. Type your description instead.");
-        const nextTranscript = json.data?.transcript ?? json.transcript ?? "";
-        setTranscript((previous) => (previous ? `${previous}\n` : "") + nextTranscript);
+        try {
+          const wav = await recordingToWav(blob);
+          const fd = new FormData();
+          fd.append("file", wav);
+          const res = await fetch("/api/ai/transcribe", { method: "POST", body: fd });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json?.error?.message ?? "Transcription unavailable. Type your description instead.");
+          const nextTranscript = json.data?.transcript ?? json.transcript ?? "";
+          setTranscript((previous) => (previous ? `${previous}\n` : "") + nextTranscript);
+        } finally {
+          void refreshAiUsage();
+        }
       },
     });
     voiceRecorderRef.current = controller;
@@ -145,7 +162,7 @@ export function SellForm({
       voiceRecorderRef.current = null;
       controller.dispose();
     };
-  }, []);
+  }, [refreshAiUsage]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -164,7 +181,8 @@ export function SellForm({
       if (!res.ok) throw new Error(json?.error?.message ?? "Upload failed");
       if(imagePath && imagePath !== initialListing?.image_path && imagePath !== initialData?.image_path && !preserveInitialPhoto) void fetch("/api/uploads", { method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:imagePath}) }).catch(() => undefined);
       const nextPath = json.data.path ?? json.path;
-      setAiDraft(null); setSuggestedFields([]); setApplyAnnouncement(""); setConfirmed(false); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null);
+      generationRequestRef.current++;
+      setAiStatus(""); setAiFeedback(null); setConfirmed(false); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null);
       imagePathRef.current = nextPath;
       setImagePath(nextPath);
       setImageUrl(json.data.url ?? json.url);
@@ -191,50 +209,49 @@ export function SellForm({
       setCutout(result); setPhotoDisplayMode("both"); setConfirmed(false);
     } catch (err) {
       if (imagePathRef.current === requestedPath) setCutoutError(err instanceof Error ? err.message : "Cutout unavailable. Your original is unchanged.");
-    } finally { setCutoutLoading(false); }
+    } finally { setCutoutLoading(false); void refreshAiUsage(); }
   }
 
   async function handleAiDraft() {
     if (!canWrite || !draftAvailable) { setAiError(session?.ai_enabled === false || !anyAi ? "AI assistance is off. You can fill in the listing yourself." : "AI suggestions are not configured. Fill fields manually."); return; }
+    const requestId = ++generationRequestRef.current;
+    const requestedUserId = session?.user?.id ?? null;
+    const suggestionImagePath = initialData?.suggestion_image_path || imagePath || "";
+    const requestedTranscript = transcript;
+    const imageContext = initialData?.suggestion_image_path ? "selected_item_cutout" : "listing_photo";
+    const sourceKey = generationSourceKey({ userId: requestedUserId, imagePath: suggestionImagePath, transcript: requestedTranscript, imageContext });
+    const nonce = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const idempotencyKey = draftIdempotencyKey(nonce);
     setAiLoading(true);
     setAiError("");
+    setAiStatus("");
     try {
       const res = await fetch("/api/ai/draft", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_path: initialData?.suggestion_image_path || imagePath || undefined, transcript: transcript || undefined }),
+        headers: { "Content-Type": "application/json", "X-Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ image_path: suggestionImagePath || undefined, transcript: requestedTranscript || undefined, image_context: suggestionImagePath ? imageContext : undefined }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message ?? json?.message ?? "AI suggestions are unavailable. Fill fields manually.");
       const data = (json.data ?? json) as DraftSuggestion;
-      setAiDraft(data.draft);
-      setSuggestedFields((data.suggested_fields ?? []).filter((field) => ["title", "description", "category_slug", "tags"].includes(field)));
-      setApplyAnnouncement("");
+      const currentImagePath = initialData?.suggestion_image_path || imagePathRef.current || "";
+      const currentSourceKey = generationSourceKey({ userId: sessionUserRef.current, imagePath: currentImagePath, transcript: transcriptRef.current, imageContext });
+      if (!shouldApplyGenerationResult({ requestId, currentRequestId: generationRequestRef.current, requestedSource: sourceKey, currentSource: currentSourceKey })) return;
+      const values = suggestionValuesForForm(data.draft);
+      setTitle(values.title);
+      setDescription(values.description);
+      const category = CATEGORIES.find((item) => item.slug === values.categorySlug);
+      setCategoryId(category?.id ?? "");
+      setTags(values.tags);
+      setAiFeedback(data.draft.feedback ?? null);
+      setAiStatus("Suggestions filled in. You can edit every field.");
+      setConfirmed(false);
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : "AI assistance is unavailable. Continue manually.");
+      if (generationRequestRef.current === requestId) setAiError(err instanceof Error ? err.message : "AI assistance is unavailable. Continue manually.");
     } finally {
-      setAiLoading(false);
+      if (generationRequestRef.current === requestId) setAiLoading(false);
+      void refreshAiUsage();
     }
-  }
-
-  const currentCategorySlug = CATEGORIES.find((category) => category.id === categoryId)?.slug ?? "";
-
-  function suggestionIsApplied(field: SuggestionField) {
-    return aiDraft ? isSuggestionApplied(field, aiDraft, { title, description, categorySlug: currentCategorySlug, tags }) : false;
-  }
-
-  function applySuggestion(field: SuggestionField) {
-    if (!aiDraft) return;
-    setConfirmed(false);
-    if (field === "title" && aiDraft.title) setTitle(aiDraft.title);
-    if (field === "description" && aiDraft.description) setDescription(aiDraft.description);
-    if (field === "category_slug" && aiDraft.category_slug) {
-      const cat = CATEGORIES.find((c) => c.slug === aiDraft.category_slug);
-      if (cat) setCategoryId(cat.id);
-    }
-    if (field === "tags" && aiDraft.tags) setTags(aiDraft.tags.slice(0, 12));
-    const label = field === "category_slug" ? "Category" : field.charAt(0).toUpperCase() + field.slice(1);
-    setApplyAnnouncement(`${label} suggestion applied.`);
   }
 
   async function toggleRecording() {
@@ -311,7 +328,7 @@ export function SellForm({
           <div>
             <h2 className="text-base font-semibold tracking-tight text-[#f6ead8]">Photo workspace</h2>
             <p className="mt-1 text-xs leading-5 text-[#bba995]">Add one clear photo. A background cutout is optional.</p>
-            {session?.multi_cutout_enabled && !initialListing && !initialData && <p className="mt-2 text-xs text-[#ead7b7]"><Link href="/sell/multiple" className="underline decoration-[#ead7b7]/60 underline-offset-4 hover:text-white">Mark up to 3 items from one photo</Link></p>}
+            {session?.multi_cutout_enabled && !initialListing && !initialData && <p className="mt-2 text-xs text-[#ead7b7]"><Link href="/sell/multiple" className="underline decoration-[#ead7b7]/60 underline-offset-4 hover:text-white">Want to create three listings at once? Click here to segment multiple items.</Link></p>}
           </div>
 
           <div className="space-y-2">
@@ -320,20 +337,20 @@ export function SellForm({
               <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[#1a100c] ring-1 ring-[#4a3025]/70">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={imageUrl} alt="Listing photo preview" className="h-full w-full object-contain" />
-                {!lockPhoto && <button type="button" onClick={() => { imagePathRef.current = ""; setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiDraft(null); setSuggestedFields([]); setApplyAnnouncement(""); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>}
+                {!lockPhoto && <button type="button" onClick={() => { generationRequestRef.current++; imagePathRef.current = ""; setImageUrl(""); setImagePath(""); setUploadInfo(""); setConfirmed(false); setAiStatus(""); setAiFeedback(null); setCutout(null); setPhotoDisplayMode("original"); setCutoutError(""); setLoadedPreviewIdentity(null); }} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Remove image"><X className="size-4" /></button>}
               </div>
             ) : (
               <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl bg-[#1a100c] px-6 text-center ring-1 ring-dashed ring-[#75513e] transition hover:bg-[#21140f] hover:ring-[#ead7b7] focus-within:ring-[#ead7b7]">
                 <Upload className="size-6 text-[#ead7b7]" />
                 <span className="text-sm font-medium text-[#f6ead8]">{uploading ? "Compressing…" : "Choose photo"}</span>
-                <span className="text-xs text-[#bba995]">JPEG, PNG or WebP. Auto-compressed.</span>
-                <input type="file" id="image" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
+                <span className="text-xs text-[#bba995]">JPG or PNG.</span>
+                <input type="file" id="image" accept="image/jpeg,image/png" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
               </label>
             )}
             {imageUrl && !lockPhoto && (
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#1a100c] px-3 py-1.5 text-xs font-medium text-[#bba995] ring-1 ring-[#4a3025]/60 hover:text-[#f6ead8] hover:ring-[#ead7b7]">
                 <Upload className="size-3.5" /> Replace photo
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
+                <input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={handleFile} disabled={uploading || !canWrite} />
               </label>
             )}
             {uploadInfo && <p className="text-xs leading-5 text-[#bba995]" role="status" aria-live="polite">{uploadInfo}</p>}
@@ -373,7 +390,7 @@ export function SellForm({
         <div className="min-w-0 max-w-full space-y-6">
           <section className="min-w-0 max-w-full rounded-[1.5rem] bg-[#241712] p-4 ring-1 ring-[#4a3025]/60 sm:p-5">
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-[#bba995]"><Sparkles className="size-3.5 text-[#ead7b7]" /> Optional AI help</div>
-          <p className="mt-1 text-xs leading-5 text-[#bba995]">Generate optional suggestions, apply them one at a time, and review before publishing. Each generation or voice request counts toward daily limits.</p>
+          <p className="mt-1 text-xs leading-5 text-[#bba995]">Describe your item to generate suggestions.</p>
           {!anyAi && canWrite && !sessionLoading && <p className="mt-2 text-xs leading-5 text-amber-300/90">AI is off or not configured. Fill fields manually below.</p>}
           {anyAi && !draftAvailable && canWrite && <p className="mt-2 text-xs leading-5 text-amber-300/80">AI suggestions are unavailable with the current provider. Voice may still work; otherwise fill manually.</p>}
           {anyAi && draftAvailable && !voiceAvailable && canWrite && <p className="mt-2 text-xs leading-5 text-amber-300/80">Voice transcription unavailable with current provider. Type description directly.</p>}
@@ -408,27 +425,16 @@ export function SellForm({
               {!voiceAvailable && canWrite && <p className="mt-1 text-[11px] text-[#bba995]">Voice is off. Type your description instead.</p>}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="primary" size="sm" onClick={handleAiDraft} disabled={aiLoading || voiceBusy || !canWrite || !draftAvailable || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate suggestions"}</Button>
-              {aiLoading && <span className="text-xs text-[#bba995]" role="status">Working… (counts toward limit)</span>}
-              {!aiLoading && aiDraft && suggestedFields.length > 0 && <span className="text-xs text-[#bba995]">Suggestions ready. Review before publishing.</span>}
+              <Button type="button" variant="primary" size="sm" onClick={handleAiDraft} disabled={aiLoading || voiceBusy || !canWrite || !draftAvailable || Boolean(aiUsage && !aiUsage.available) || (!imagePath && !transcript)}>{aiLoading ? "Generating…" : "Generate Suggestions"}</Button>
+              {aiLoading && <span className="text-xs text-[#bba995]" role="status">Generating suggestions…</span>}
             </div>
             {aiError && <p className="text-xs leading-5 text-amber-300" role="alert">{aiError}</p>}
-            {aiDraft && suggestedFields.length > 0 && (
-              <div className="min-w-0 max-w-full space-y-2 rounded-lg bg-[#1a100c] p-2.5 ring-1 ring-[#4a3025]/50">
-                <p className="text-xs font-medium text-[#f6ead8]">Suggestions</p>
-                {suggestedFields.map((field) => {
-                  const suggestionField = field as SuggestionField;
-                  const applied = suggestionIsApplied(suggestionField);
-                  const label = field === "category_slug" ? "Category" : field.charAt(0).toUpperCase() + field.slice(1);
-                  return <SuggestionRow key={field} label={label} value={suggestionDisplayValue(suggestionField, aiDraft)} applied={applied} onApply={() => applySuggestion(suggestionField)} />;
-                })}
-                <p className="text-[11px] leading-4 text-[#bba995]">Manual entry remains available at all times.</p>
-              </div>
-            )}
-            <p className="sr-only" role="status" aria-live="polite">{applyAnnouncement}</p>
-            {!draftAvailable && canWrite && anyAi && <p className="text-xs text-[#bba995]">Suggestions are unavailable with the current configuration. Enter details manually.</p>}
-            {!anyAi && canWrite && <p className="text-xs text-[#bba995]">AI is off. Fill fields manually below.</p>}
-            <p className="text-[10px] leading-4 text-[#8f7d6d]">AI use is limited. Manual listing remains available at all times.</p>
+            {aiStatus && <p className="text-xs leading-5 text-emerald-300" role="status" aria-live="polite">{aiStatus}</p>}
+            {aiUsageMessage(aiUsage, aiUsageUnavailable) && <p className="text-[11px] leading-5 text-[#bba995]">{aiUsageMessage(aiUsage, aiUsageUnavailable)}</p>}
+            {aiFeedback && (aiFeedback.missing_details.length > 0 || aiFeedback.photo_guidance.length > 0) && <div className="grid gap-3 sm:grid-cols-2">
+              {aiFeedback.missing_details.length > 0 && <div className="rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50"><p className="text-xs font-medium text-[#f6ead8]">Details you may want to add</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-[#bba995]">{aiFeedback.missing_details.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+              {aiFeedback.photo_guidance.length > 0 && <div className="rounded-xl bg-[#1a100c] p-3 ring-1 ring-[#4a3025]/50"><p className="text-xs font-medium text-[#f6ead8]">Photo tips</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-[#bba995]">{aiFeedback.photo_guidance.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+            </div>}
           </div>
           </section>
 
@@ -437,7 +443,6 @@ export function SellForm({
           <div>
             <Label htmlFor="title">Title *</Label>
             <Input id="title" value={title} onChange={(e)=>setTitle(e.target.value)} maxLength={100} required className="mt-1.5 bg-[#1a100c]" placeholder="e.g. Engineering Mechanics by R.S. Khurmi" />
-            {suggestedFields.includes("title") && <Badge variant="outline" className="mt-1.5">AI suggestion available</Badge>}
             {fieldErrors.title && <p className="mt-1 text-xs text-red-400" role="alert">{String(fieldErrors.title)}</p>}
           </div>
 
