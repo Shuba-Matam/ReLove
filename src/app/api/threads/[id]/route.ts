@@ -5,6 +5,7 @@ import { json, ApiProblem, withApi } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/auth";
 import { z } from "zod";
 import type { ThreadDetail, ThreadSummary, Message } from "@/lib/marketplace";
+import { messagingTimestampSchema } from "@/lib/messaging-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +79,7 @@ export const GET = withApi(async (request: NextRequest, context: unknown) => {
   const participantRow = isBuyer ? t.seller : t.buyer;
   const participant = participantRow ? toProfile(participantRow) : { id: isBuyer ? t.seller_id : t.buyer_id, display_name: "Unknown", avatar_url: null, hostel_block: null };
 
-  const before = z.string().datetime().optional().parse(new URL(request.url).searchParams.get("before") ?? undefined);
+  const before = messagingTimestampSchema.optional().parse(new URL(request.url).searchParams.get("before") ?? undefined);
   let messageQuery = supabase
     .from("messages")
     .select("id, thread_id, sender_id, recipient_id, body, created_at, read_at, client_action_id")

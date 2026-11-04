@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CONDITIONS } from "./marketplace";
+import { messagingTimestampSchema } from "./messaging-validation";
 
 export const uuidSchema = z.string().uuid();
 export const imagePathSchema = z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:jpg|jpeg|png|webp)$/i, "Use an uploaded listing image.");
@@ -40,7 +41,7 @@ export const listingFiltersSchema = z.object({
 }).refine((v) => v.min_price === undefined || v.max_price === undefined || v.min_price <= v.max_price, { message: "Minimum price must not exceed maximum price.", path: ["min_price"] });
 export const profileSchema = z.object({ display_name: z.string().trim().min(2).max(60), hostel_block: z.string().trim().max(60).nullable() }).strict();
 export const messageSchema = z.object({ body: z.string().trim().min(1).max(2000), client_action_id: uuidSchema.optional() }).strict();
-export const readMessagesSchema = z.object({ through_created_at: z.string().datetime(), through_id: uuidSchema }).strict();
+export const readMessagesSchema = z.object({ through_created_at: messagingTimestampSchema, through_id: uuidSchema }).strict();
 export const startThreadSchema = z.object({ listing_id: uuidSchema }).strict();
 export const reportSchema = z.object({ listing_id: uuidSchema, reason: z.enum(["prohibited", "misleading", "spam", "other"]), details: z.string().trim().max(1000).default("") }).strict();
 export type ListingInput = z.infer<typeof listingSchema>;

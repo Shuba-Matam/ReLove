@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { messagingTimestampSchema } from "./messaging-validation";
 
 export const NOTIFICATION_POLL_INTERVAL_MS = 30_000;
 export const NOTIFICATION_POLL_TIMEOUT_MS = 10_000;
@@ -36,7 +37,7 @@ export function shouldPollNotifications(mode: string | null | undefined, userId:
 export const notificationMessageSchema = z.object({
   id: z.string().uuid(),
   threadId: z.string().uuid(),
-  createdAt: z.string().datetime(),
+  createdAt: messagingTimestampSchema,
   listingTitle: z.string().min(1).max(200),
   listingImageUrl: z.string().min(1).max(1000),
   participantName: z.string().min(1).max(100),
