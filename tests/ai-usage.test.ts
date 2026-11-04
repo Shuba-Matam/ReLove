@@ -75,6 +75,18 @@ const usage = (ownerFeature: AiUsage["feature"] = "draft"): AiUsage => ({
 describe("client AI usage request lifetime", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("calls a receiver-sensitive browser fetch with the global receiver", async () => {
+    const fetcher = vi.fn(function (this: typeof globalThis) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(new Response(JSON.stringify({ data: usage() }), { status: 200 }));
+    }) as unknown as typeof fetch;
+    const manager = new AiUsageRequestManager(fetcher);
+    manager.setOwner("user");
+
+    await expect(manager.load("user", "draft")).resolves.toEqual({ status: "success", owner: "user", usage: usage() });
+    expect(fetcher).toHaveBeenCalledWith("/api/ai/usage?feature=draft", expect.objectContaining({ cache: "no-store" }));
+  });
+
   it("does not let a late previous-account response restore stale usage", async () => {
     let resolveFirst!: (value: Response) => void;
     const fetcher = vi.fn(() => new Promise<Response>((resolve) => { resolveFirst = resolve; })) as unknown as typeof fetch;

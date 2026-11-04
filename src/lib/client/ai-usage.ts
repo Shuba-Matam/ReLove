@@ -59,7 +59,7 @@ export class AiUsageRequestManager {
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await this.fetcher(`/api/ai/usage?feature=${encodeURIComponent(feature)}`, {
+      const response = await this.fetcher.call(globalThis, `/api/ai/usage?feature=${encodeURIComponent(feature)}`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -168,7 +168,7 @@ const FEATURE_LABELS: Record<AiUsageFeature, string> = {
 };
 
 export function aiUsageMessage(usage: AiUsage | null, unavailable: boolean): string | null {
-  if (unavailable) return "AI try availability is unavailable right now.";
+  if (unavailable) return "Could not load your remaining AI tries.";
   if (!usage) return null;
   const label = FEATURE_LABELS[usage.feature];
   const count = `${usage.remaining} of ${usage.limit} shared account AI tries remain today for ${label}.`;
