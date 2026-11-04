@@ -112,6 +112,6 @@ npm run build
 npm audit --omit=dev
 ~~~
 
-The November 5, 2026 release evidence records 240 application baseline tests, 68 release checks, 33 focused timestamp follow-up tests, typecheck and build passes, CI success, deployment success, and a live smoke pass. Real temporary signed-in accounts, created through test auth sessions, verified incoming messages without refresh, duplicate replay returning the same message ID, mismatch `409`, outsider `404` with no realtime events, inbox RPC behavior, read-receipt endpoints, and the notification controller against live data with an unread-count increment and toast.
+The November 5, 2026 release evidence records 240 application tests, 68 release checks, and 33 targeted timestamp follow-up tests, along with successful typecheck, build, CI, deployment, and live smoke checks. Live verification covered message sending, incoming messages without refresh, read receipts, unread counts and notifications, duplicate handling, inbox behavior, and conversation isolation.
 
-The native browser check used the real backend and realtime path. Responsive layouts were checked at 320, 360, and 390 pixel widths. This verification did not establish physical-phone behavior, repeat two fresh Google OAuth walkthroughs, run a mandatory ten-photo benchmark, or perform a comprehensive privacy or compliance audit.
+Browser checks covered desktop and mobile viewport sizes; this is not a physical-device or comprehensive photo-quality benchmark.
