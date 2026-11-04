@@ -31,7 +31,7 @@ export interface Listing {
   category?: Category;
   seller?: Profile;
 }
-export interface Message { id: string; thread_id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null }
+export interface Message { id: string; thread_id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null; client_action_id?: string | null }
 export interface ThreadSummary {
   id: string;
   listing: Pick<Listing, "id" | "title" | "image_url" | "price_inr" | "status">;

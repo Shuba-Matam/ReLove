@@ -3,6 +3,7 @@ import * as React from "react";
 import "./globals.css";
 import { SessionProvider } from "@/lib/client/session";
 import { NotificationsProvider } from "@/lib/client/notifications";
+import { MessagingProvider } from "@/lib/client/messaging";
 import { NotificationToasts } from "@/components/notifications/notification-toasts";
 import { SiteHeader } from "@/components/layout/site-header";
 import { MobileNav } from "@/components/layout/mobile-nav";
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-[#1a100c] text-[#f6ead8] antialiased">
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-[#ead7b7] focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-[#241712] focus:outline-none focus:ring-2 focus:ring-[#e6c79c] focus:ring-offset-2 focus:ring-offset-[#1a100c]">Skip to content</a>
         <SessionProvider>
+          <MessagingProvider>
           <NotificationsProvider>
             <React.Suspense fallback={<header className="h-14 border-b border-[#4a3025]/40 bg-[#1a100c]" aria-hidden="true" />}>
               <SiteHeader />
@@ -54,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </nav>
             </footer>
           </NotificationsProvider>
+          </MessagingProvider>
         </SessionProvider>
       </body>
     </html>

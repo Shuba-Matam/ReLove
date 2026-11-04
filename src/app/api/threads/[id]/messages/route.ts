@@ -23,7 +23,7 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
   if (mode === "demo") throw new ApiProblem(403, "demo_readonly", "Demo mode messaging is disabled.");
 
   const { supabase, user } = await requireUser();
-  const { body } = await readJson(request, messageSchema);
+  const { body, client_action_id } = await readJson(request, messageSchema);
 
   // Fetch thread to validate participant and determine recipient
   const { data: thread, error: threadErr } = await supabase.from("threads").select("id, buyer_id, seller_id").eq("id", threadId).single();
@@ -43,7 +43,19 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
   // Validate sender+recipient against immutable thread: ensure we derive recipient from thread, not client input
   // Already done
 
-  // Insert message
+  const { data: replay, error: replayErr } = await supabase
+    .from("messages")
+    .select("id, thread_id, sender_id, recipient_id, body, created_at, read_at, client_action_id")
+    .eq("sender_id", sender_id)
+    .eq("client_action_id", client_action_id)
+    .maybeSingle();
+  if (replayErr) throw new ApiProblem(500, "db_error", "Failed to verify message delivery.");
+  if (replay) {
+    const previous = replay as { thread_id: string; body: string };
+    if (previous.thread_id !== threadId || previous.body !== body) throw new ApiProblem(409, "idempotency_mismatch", "This send action was already used for a different message.");
+    return json(replay, 200);
+  }
+
   const { data: inserted, error: insertErr } = await supabase
     .from("messages")
     .insert({
@@ -51,11 +63,17 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
       sender_id,
       recipient_id,
       body,
+      client_action_id,
     })
-    .select("id, thread_id, sender_id, recipient_id, body, created_at, read_at")
+    .select("id, thread_id, sender_id, recipient_id, body, created_at, read_at, client_action_id")
     .single();
 
   if (insertErr) {
+    if ((insertErr as { code?: string }).code === "23505") {
+      const { data: raced } = await supabase.from("messages").select("id, thread_id, sender_id, recipient_id, body, created_at, read_at, client_action_id").eq("sender_id", sender_id).eq("client_action_id", client_action_id).maybeSingle();
+      if (raced && (raced as { thread_id: string; body: string }).thread_id === threadId && (raced as { body: string }).body === body) return json(raced, 200);
+      throw new ApiProblem(409, "idempotency_mismatch", "This send action was already used for a different message.");
+    }
     console.error("[messages POST] insert error:", insertErr);
     throw new ApiProblem(500, "db_error", "Failed to send message.");
   }

@@ -129,10 +129,11 @@ describe("listing validation distinguishes missing categories from outages", () 
 });
 
 it("sends a message without a second, redundant thread update", async () => {
-  const saved = { id: listingId, thread_id: listingId, sender_id: owner, recipient_id: buyer, body: "Available?", created_at: "2026-11-02T00:00:00Z", read_at: null };
-  const fetcher = database({ body: { id: listingId, buyer_id: buyer, seller_id: owner } }, { body: saved });
-  const response = await sendMessage(mutation(`/api/threads/${listingId}/messages`, "POST", { body: "Available?" }), { params: Promise.resolve({ id: listingId }) });
+  const action = "44444444-4444-4444-8444-444444444444";
+  const saved = { id: listingId, thread_id: listingId, sender_id: owner, recipient_id: buyer, body: "Available?", created_at: "2026-11-02T00:00:00Z", read_at: null, client_action_id: action };
+  const fetcher = database({ body: { id: listingId, buyer_id: buyer, seller_id: owner } }, { body: null }, { body: saved });
+  const response = await sendMessage(mutation(`/api/threads/${listingId}/messages`, "POST", { body: "Available?", client_action_id: action }), { params: Promise.resolve({ id: listingId }) });
   expect(response.status).toBe(201);
   expect((await response.json()).data).toEqual(saved);
-  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher).toHaveBeenCalledTimes(3);
 });

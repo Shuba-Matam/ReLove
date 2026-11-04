@@ -11,6 +11,7 @@ import {
   type NotificationControllerState,
 } from "@/lib/client/notifications-controller";
 import type { NotificationToastData } from "@/lib/notifications";
+import { useMessaging } from "@/lib/client/messaging";
 
 export interface NotificationsContextValue {
   unreadCount: number;
@@ -39,9 +40,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const userId = session?.user?.id ?? null;
   const mode = session?.mode ?? null;
   const openThreadId = getOpenThreadId(pathname);
+  const messaging = useMessaging();
   // Key by identity ensures immediate render of zero state, independent of post-paint effects
   return (
-    <NotificationsInner key={userId ?? "__anon__"} userId={userId} mode={mode} openThreadId={openThreadId}>
+    <NotificationsInner key={userId ?? "__anon__"} userId={userId} mode={mode} openThreadId={openThreadId} messaging={messaging}>
       {children}
     </NotificationsInner>
   );
@@ -52,11 +54,13 @@ function NotificationsInner({
   userId,
   mode,
   openThreadId,
+  messaging,
 }: {
   children: React.ReactNode;
   userId: string | null;
   mode: string | null;
   openThreadId: string | null;
+  messaging: ReturnType<typeof useMessaging>;
 }) {
   // State tagged with identity; gated at render so even if scheduler lags, visible value is zero when identity mismatches
   const [state, setState] = React.useState<NotificationControllerState>(() => createInitialNotificationState(userId));
@@ -138,6 +142,17 @@ function NotificationsInner({
       }
     };
   }, [userId, mode]);
+
+  React.useEffect(() => messaging.subscribe((event) => {
+    if (event.kind === "message") void schedulerRef.current?.refresh();
+  }), [messaging]);
+
+  React.useEffect(() => {
+    const scheduler=schedulerRef.current;
+    if(!scheduler) return;
+    if(messaging.status === "connected") scheduler.clearIntervalSafe();
+    else if(userId && mode === "live") scheduler.ensureInterval();
+  }, [messaging.status,userId,mode]);
 
   const dismissToast = React.useCallback((id: string) => {
     schedulerRef.current?.dismissToast(id);

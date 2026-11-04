@@ -39,6 +39,7 @@ beforeAll(async () => {
   `);
   await db.exec(await readFile("supabase/migrations-draft/001_initial.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations-draft/002_ai.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations-draft/005_messaging_notifications.sql", "utf8"));
   for (const [id, name] of [[seller, "Seller"], [buyer, "Buyer"], [stranger, "Stranger"]]) await db.query("insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3::jsonb)", [id, `${name.toLowerCase()}@example.test`, JSON.stringify({ full_name: name })]);
   await asUser(seller, "insert into storage.objects(bucket_id,name) values('listing-images',$1)", [image]);
   const create = "insert into public.listings(seller_id,category_id,title,description,price_inr,condition,hostel_block,image_path,image_url,tags,status) values($1,$2,$3,'A comfortable chair for studying.',1000,'good','Block A',$4,$5,ARRAY['chair','seat'],$6) returning id";
@@ -97,6 +98,21 @@ describe.sequential("real database migrations and RLS", () => {
     await expect(asUser(seller, "update messages set body='Rewritten' where id=$1", [message])).rejects.toThrow();
     expect((await asUser(buyer, "update messages set read_at=now() where id=$1 returning id", [message])).rows).toHaveLength(0);
     expect((await asUser(seller, "update messages set read_at=now() where id=$1 returning id", [message])).rows).toHaveLength(1);
+  });
+  it("dedupes sends by sender action and bounds read receipts to a visible cursor", async () => {
+    const action="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    await asUser(buyer,"insert into messages(thread_id,sender_id,recipient_id,body,client_action_id) values($1,$2,$3,'retry safe',$4)",[thread,buyer,seller,action]);
+    await expect(asUser(buyer,"insert into messages(thread_id,sender_id,recipient_id,body,client_action_id) values($1,$2,$3,'retry safe',$4)",[thread,buyer,seller,action])).rejects.toThrow();
+    const rows=(await asUser<{id:string;created_at:string}>(seller,"select id,created_at from messages where thread_id=$1 and recipient_id=$2 and read_at is null order by created_at,id",[thread,seller])).rows;
+    const through=rows[0];
+    await asUser(seller,"select mark_thread_read($1,$2,$3)",[thread,through.created_at,through.id]);
+    expect((await asUser(seller,"select id from messages where thread_id=$1 and recipient_id=$2 and read_at is null",[thread,seller])).rows.length).toBe(rows.length-1);
+    await expect(asUser(stranger,"select mark_thread_read($1,now(),$2)",[thread,through.id])).rejects.toThrow();
+  });
+  it("returns inbox summaries in one participant-scoped RPC", async () => {
+    const buyerRows=await asUser<{id:string;unread_count:number}>(buyer,"select id,unread_count from get_inbox(100)");
+    expect(buyerRows.rows.some((row)=>row.id===thread)).toBe(true);
+    expect((await asUser(stranger,"select * from get_inbox(100)")).rows).toHaveLength(0);
   });
   it("accepts reports without exposing them to regular users", async () => {
     await asUser(buyer, "insert into reports(listing_id,reporter_id,reason) values($1,$2,'misleading')", [listing, buyer]);

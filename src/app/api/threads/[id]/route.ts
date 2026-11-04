@@ -81,7 +81,7 @@ export const GET = withApi(async (request: NextRequest, context: unknown) => {
   const before = z.string().datetime().optional().parse(new URL(request.url).searchParams.get("before") ?? undefined);
   let messageQuery = supabase
     .from("messages")
-    .select("id, thread_id, sender_id, recipient_id, body, created_at, read_at")
+    .select("id, thread_id, sender_id, recipient_id, body, created_at, read_at, client_action_id")
     .eq("thread_id", threadId)
     .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(101);
   if(before) messageQuery=messageQuery.lt("created_at",before);
@@ -101,6 +101,7 @@ export const GET = withApi(async (request: NextRequest, context: unknown) => {
     body: (m as Record<string, unknown>).body as string,
     created_at: (m as Record<string, unknown>).created_at as string,
     read_at: (m as Record<string, unknown>).read_at as string | null,
+    client_action_id: (m as Record<string, unknown>).client_action_id as string | null,
   }));
 
   // Compute last_message and unread_count for summary

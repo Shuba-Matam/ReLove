@@ -49,56 +49,21 @@ export const GET = withApi(async () => {
 
   const { supabase, user } = await requireUser();
 
-  const { data: threads, error } = await supabase
-    .from("threads")
-    .select(
-      `
-      id, listing_id, buyer_id, seller_id, created_at, updated_at,
-      listing:listings!threads_listing_id_fkey(id, title, image_url, price_inr, status),
-      buyer:profiles!threads_buyer_id_fkey(id, display_name, avatar_url, hostel_block, created_at),
-      seller:profiles!threads_seller_id_fkey(id, display_name, avatar_url, hostel_block, created_at)
-    `
-    )
-    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .order("updated_at", { ascending: false }).limit(100);
+  const { data: threads, error } = await supabase.rpc("get_inbox", { p_limit: 100 });
 
   if (error) {
     console.error("[threads GET] db error:", error);
     throw new ApiProblem(500, "db_error", "Failed to load threads.");
   }
 
-  if (!threads || threads.length === 0) {
-    return json([] as ThreadSummary[]);
-  }
-
-  // Fetch last_message and unread_count per thread in parallel
-  const summaries = await Promise.all(
-    (threads as unknown as ThreadRow[]).map(async (t) => {
-      const [lastMsgRes, unreadRes] = await Promise.all([
-        supabase
-          .from("messages")
-          .select("body, created_at, sender_id")
-          .eq("thread_id", t.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("messages")
-          .select("id", { count: "exact", head: true })
-          .eq("thread_id", t.id)
-          .eq("recipient_id", user.id)
-          .is("read_at", null),
-      ]);
-
-      if(lastMsgRes.error || unreadRes.error) throw new ApiProblem(503,"MESSAGES_UNAVAILABLE","Messages are temporarily unavailable.");
-      const lastMessage = lastMsgRes.data
-        ? { body: (lastMsgRes.data as { body: string }).body, created_at: (lastMsgRes.data as { created_at: string }).created_at, sender_id: (lastMsgRes.data as { sender_id: string }).sender_id }
-        : null;
-      const unread = (unreadRes.count as number) ?? 0;
-
-      return toThreadSummary(t, user.id, lastMessage, unread);
-    })
-  );
+  type InboxRow = { id:string; listing_id:string; buyer_id:string; seller_id:string; updated_at:string; listing_title:string; listing_image_url:string; listing_price_inr:number; listing_status:string; participant_id:string; participant_display_name:string; participant_avatar_url:string|null; participant_hostel_block:string|null; last_body:string|null; last_created_at:string|null; last_sender_id:string|null; unread_count:number|string };
+  const summaries: ThreadSummary[] = ((threads ?? []) as InboxRow[]).map((row) => ({
+    id: row.id,
+    listing: { id: row.listing_id, title: row.listing_title, image_url: row.listing_image_url, price_inr: row.listing_price_inr, status: row.listing_status as ThreadSummary["listing"]["status"] },
+    participant: { id: row.participant_id, display_name: row.participant_display_name, avatar_url: row.participant_avatar_url, hostel_block: row.participant_hostel_block },
+    last_message: row.last_created_at && row.last_sender_id ? { body: row.last_body ?? "", created_at: row.last_created_at, sender_id: row.last_sender_id } : null,
+    unread_count: Number(row.unread_count), updated_at: row.updated_at,
+  }));
 
   return json(summaries);
 });

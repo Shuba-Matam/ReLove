@@ -265,7 +265,7 @@ export class NotificationPollScheduler {
     localTimeoutId = setTimeoutFn(() => controller.abort(), NOTIFICATION_POLL_TIMEOUT_MS) as unknown as number;
 
     try {
-      const res = await fetchFn("/api/notifications/summary", {
+      const res = await fetchFn.call(globalThis, "/api/notifications/summary", {
         cache: "no-store",
         signal: controller.signal,
         headers: { "Cache-Control": "no-store" },
