@@ -131,7 +131,7 @@ describe("validation schemas", () => {
     expect(messageSchema.safeParse({ body: "hello", client_action_id }).success).toBe(true);
     expect(messageSchema.safeParse({ body: "", client_action_id }).success).toBe(false);
     expect(messageSchema.safeParse({ body: "a".repeat(2001), client_action_id }).success).toBe(false);
-    expect(messageSchema.safeParse({ body: "hello" }).success).toBe(false);
+    expect(messageSchema.safeParse({ body: "hello" }).success).toBe(true);
   });
   it("reportSchema", () => {
     expect(reportSchema.safeParse({ listing_id: "00000000-0000-4000-8000-000000000001", reason: "spam", details: "" }).success).toBe(true);

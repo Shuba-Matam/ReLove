@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useSession } from "@/lib/client/session";
-import { PushOptInCard } from "@/components/notifications/push-opt-in";
 
 export default function ProfilePage() {
   const { session, refresh, loading } = useSession();
@@ -70,7 +69,6 @@ export default function ProfilePage() {
           </form>
         </CardContent>
         </Card>
-        <PushOptInCard />
       </div>
   );
 }

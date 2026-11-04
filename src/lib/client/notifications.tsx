@@ -70,11 +70,13 @@ function NotificationsInner({
   const userIdRef = React.useRef(userId);
   const modeRef = React.useRef(mode);
   const openThreadIdRef = React.useRef(openThreadId);
+  const messagingStatusRef = React.useRef(messaging.status);
   React.useEffect(() => {
     userIdRef.current = userId;
     modeRef.current = mode;
     openThreadIdRef.current = openThreadId;
-  }, [userId, mode, openThreadId]);
+    messagingStatusRef.current = messaging.status;
+  }, [userId, mode, openThreadId, messaging.status]);
 
   const schedulerRef = React.useRef<NotificationPollScheduler | null>(null);
 
@@ -116,15 +118,21 @@ function NotificationsInner({
     setIsPolling(true);
 
     const onFocus = () => {
-      scheduler.onFocus();
-      setIsPolling(true);
+      if (messagingStatusRef.current === "connected") {
+        scheduler.onFocusConnected();
+        setIsPolling(false);
+      } else {
+        scheduler.onFocus();
+        setIsPolling(true);
+      }
     };
     const onVisibility = () => {
-      scheduler.onVisibilityChange();
+      if (messagingStatusRef.current === "connected") scheduler.onVisibilityChangeConnected();
+      else scheduler.onVisibilityChange();
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {
         setIsPolling(false);
       } else {
-        setIsPolling(true);
+        setIsPolling(messagingStatusRef.current !== "connected");
       }
     };
 
@@ -150,7 +158,10 @@ function NotificationsInner({
   React.useEffect(() => {
     const scheduler=schedulerRef.current;
     if(!scheduler) return;
-    if(messaging.status === "connected") scheduler.clearIntervalSafe();
+    if(messaging.status === "connected") {
+      scheduler.clearIntervalSafe();
+      void scheduler.refresh();
+    }
     else if(userId && mode === "live") scheduler.ensureInterval();
   }, [messaging.status,userId,mode]);
 

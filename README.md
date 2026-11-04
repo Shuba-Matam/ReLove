@@ -7,7 +7,7 @@ A student marketplace for giving pre-loved items a new home. Built with Next.js 
 - Responsive dark marketplace, 2-column mobile and 4-column desktop feed, search, category/price/condition/hostel filters, and load-more.
 - Google-only login, profiles, listing create/edit/sold/delete, image upload, seller confirmation, and original-photo display.
 - Private per-listing conversations with optimistic idempotent sending, live incoming messages and read receipts, realtime unread counts, earlier-message loading, and insert-only reports.
-- Optional standards-based web push for opted-in devices, with generic private notification text and a durable retry outbox.
+- In-app new-message toasts and realtime unread bell badges while the app is open. Closed-app browser push is not part of this release.
 - Reviewable database migrations with RLS, column privileges, full-text indexing, category seeds, own-folder storage, and atomic AI usage budgets.
 - Explicit editable listing suggestions with missing-detail and photo feedback (Meta Muse Spark 1.3), WAV voice transcription (Meta Muse Voice Transcribe 1.0), and single- or multi-item SAM 3.1 cutouts. All AI features are disabled by default and require server credentials, pricebook entries, and database limits.
 - One uploaded source photo can be manually boxed into up to three item cutouts and then published as separate listings. There is no automatic object discovery and no requirement to upload three photos.
@@ -52,15 +52,11 @@ To connect the actual marketplace, apply the approved SQL files in order through
 | BASETEN_API_KEY | Optional compatibility credential for Muse Spark Open, not the production default |
 | BASETEN_MODEL | Optional compatibility model, defaults to meta-models/muse-spark-open-1026 |
 | AI_MAX_RETRIES | Provider retries after the first attempt; production uses `0`, so one explicit action makes at most one provider attempt |
-| SUPABASE_SERVICE_ROLE_KEY | Server-only worker access for push delivery and the existing AI budget ledger |
-| VAPID_SUBJECT | Operator contact URI such as `mailto:admin@example.com` |
-| VAPID_PUBLIC_KEY | Public half of the web-push keypair |
-| VAPID_PRIVATE_KEY | Server-only private half of the web-push keypair |
-| PUSH_DRAIN_SECRET | Bearer secret for the scheduled retry drain endpoint |
+| SUPABASE_SERVICE_ROLE_KEY | Server-only access for the existing AI budget ledger |
 
-Secrets remain server-side. The authenticated realtime bootstrap returns only the current verified user's short-lived access token, expiry, Supabase URL, and public key. The token stays in memory, the HTTP-only refresh token is never returned, RLS scopes Postgres Changes, and disconnect clears the browser client immediately. No service role reaches the browser. Google client secret belongs in Supabase's provider configuration, not the frontend. Development coding agents and their credentials are separate from the models called by the running Re-Love app.
+Secrets remain server-side. The authenticated realtime bootstrap returns only the current verified user's short-lived access token, expiry, Supabase URL, and public key. The access token stays in memory and is renewed through the same authenticated route before expiry. The HTTP-only refresh credential is never returned to JavaScript. RLS scopes Postgres Changes, and disconnect clears the browser client immediately. No service role reaches the browser. Google client secret belongs in Supabase's provider configuration, not the frontend. Development coding agents and their credentials are separate from the models called by the running Re-Love app.
 
-Apply `supabase/migrations-draft/005_messaging_notifications.sql` after the earlier migrations. Configure a platform scheduler to POST `/api/push/drain` with `Authorization: Bearer $PUSH_DRAIN_SECRET` every minute. Next `after()` starts an immediate best-effort drain after a committed message, but it is not the durable retry mechanism. Web push is best effort. iPhone and iPad require iOS/iPadOS 16.4 or later and an installed Home Screen web app.
+Apply `supabase/migrations-draft/005_messaging_notifications.sql` after the earlier migrations. It contains only in-app messaging support: action idempotency, inbox/read RPCs, supporting indexes, and Supabase Realtime publication. No VAPID keys, notification permission, scheduler, or external push service is required.
 
 ## Architecture
 
@@ -119,4 +115,4 @@ For provider smoke testing, use a real owned upload and an authenticated test ac
 
 ## Still to verify before release
 
-Approved migrations on Supabase, actual two-account Google sign-in and RLS/storage checks, same-site cookies on the live domain, the real-phone layouts and PWA install flow, provider access and ten-photo results, final privacy review, and owner-supplied seed photos. Do not pass illustrations off as seller photographs. A signed-in user can edit their profile; self-service account deletion is not implemented. The public GitHub issues page is the approved contact for requesting a private follow-up, not a place for private data.
+Approved migrations on Supabase, two-account Google sign-in, live message/reconnect/read-receipt checks, RLS/storage checks, same-site cookies on the live domain, real-phone layouts, provider access and ten-photo results, final privacy review, and owner-supplied seed photos remain release verification items. In-app alerts work only while Re-Love is open; closed-app push is not claimed. Do not pass illustrations off as seller photographs. A signed-in user can edit their profile; self-service account deletion is not implemented. The public GitHub issues page is the approved contact for requesting a private follow-up, not a place for private data.

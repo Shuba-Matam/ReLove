@@ -32,11 +32,13 @@ export default function InboxPage() {
 
   React.useEffect(() => { const controller = new AbortController(); void (async () => { await Promise.resolve(); if(!controller.signal.aborted) await load(); })(); return () => controller.abort(); }, [load]);
   React.useEffect(() => {
-    const onFocus = () => { if (status !== "connected") void load(); };
+    const onFocus = () => { void load(); };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [load, status]);
-  React.useEffect(() => subscribe((event) => { if (event.kind === "message") void load(); }), [load, subscribe]);
+  }, [load]);
+  React.useEffect(() => subscribe((event) => {
+    if (event.kind === "message" || (event.kind === "connection" && event.status === "connected")) void load();
+  }), [load, subscribe]);
   React.useEffect(() => { if (status === "connected") return; const timer=window.setInterval(() => { if(document.visibilityState === "visible") void load(); },30_000); return () => window.clearInterval(timer); }, [load,status]);
 
   if (isDemo) {

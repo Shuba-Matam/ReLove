@@ -2,4 +2,3 @@ export { NotificationsProvider, useNotifications } from "@/lib/client/notificati
 export { NotificationToasts } from "./notification-toasts";
 export { NotificationToast } from "./notification-toast";
 export { UnreadBadge, UnreadDot } from "./unread-badge";
-export { PushOptInCard } from "./push-opt-in";

@@ -415,6 +415,11 @@ export class NotificationPollScheduler {
     this.ensureInterval();
   }
 
+  onFocusConnected(): void {
+    void this.doFetch();
+    this.clearIntervalSafe();
+  }
+
   onVisibilityChange(): void {
     if (typeof document !== "undefined" && document.visibilityState === "visible") {
       void this.doFetch();
@@ -422,5 +427,10 @@ export class NotificationPollScheduler {
     } else {
       this.clearIntervalSafe();
     }
+  }
+
+  onVisibilityChangeConnected(): void {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") void this.doFetch();
+    this.clearIntervalSafe();
   }
 }

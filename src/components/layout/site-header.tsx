@@ -89,7 +89,7 @@ export function SiteHeader() {
                 )}
                 <span className="hidden max-w-[120px] truncate text-[13px] font-medium text-[#f6ead8] lg:inline">{session.user.display_name}</span>
               </Link>
-              <form action="/auth/logout" method="post" onSubmit={(event)=>{event.preventDefault();const form=event.currentTarget;void (async()=>{try{if("serviceWorker" in navigator){const registration=await navigator.serviceWorker.ready;const subscription=await registration.pushManager.getSubscription();if(subscription){await fetch.call(globalThis,"/api/push/subscriptions",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:subscription.endpoint})});await subscription.unsubscribe();}}}finally{form.submit();}})();}}>
+              <form action="/auth/logout" method="post">
                 <button aria-label="Sign out" type="submit" className="inline-flex size-10 items-center justify-center rounded-full text-[#bba995] transition hover:bg-[#241712] hover:text-[#f6ead8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a100c]">
                   <LogOut className="size-4" />
                 </button>

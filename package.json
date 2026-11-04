@@ -24,7 +24,6 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.118.0",
-    "@types/web-push": "^3.6.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
@@ -34,7 +33,6 @@
     "server-only": "^0.0.1",
     "sharp": "^0.35.5",
     "tailwind-merge": "^3.5.0",
-    "web-push": "^3.6.7",
     "zod": "4.6.7"
   },
   "devDependencies": {

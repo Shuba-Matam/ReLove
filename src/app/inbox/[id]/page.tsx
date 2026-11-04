@@ -27,37 +27,100 @@ export default function ThreadPage() {
   const [olderLoading, setOlderLoading] = React.useState(false);
   const listRef = React.useRef<HTMLDivElement>(null);
   const wasAtBottomRef = React.useRef(true);
+  const generationRef = React.useRef(0);
+  const requestsRef = React.useRef(new Set<AbortController>());
+  const readCursorRef = React.useRef<Message | null>(null);
+  const readRunningRef = React.useRef(false);
   const isDemo = session?.mode === "demo";
   const me = session?.user?.id;
 
   const markReadThrough = React.useCallback(async (message: Message) => {
-    if (!me || message.recipient_id !== me || document.visibilityState !== "visible") return;
-    await browserFetch(`/api/threads/${id}/read`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ through_created_at: message.created_at, through_id: message.id }) }).catch(() => undefined);
-    void refreshNotifications();
+    if (!me || message.recipient_id !== me || message.read_at || document.visibilityState !== "visible") return;
+    const current = readCursorRef.current;
+    if (!current || current.created_at < message.created_at || (current.created_at === message.created_at && current.id < message.id)) readCursorRef.current = message;
+    if (readRunningRef.current) return;
+    readRunningRef.current = true;
+    const generation = generationRef.current;
+    try {
+      while (readCursorRef.current && generation === generationRef.current) {
+        const cursor = readCursorRef.current;
+        readCursorRef.current = null;
+        const response = await browserFetch(`/api/threads/${id}/read`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ through_created_at: cursor.created_at, through_id: cursor.id }),
+        });
+        if (!response.ok) throw new Error("Could not mark messages read.");
+        if (generation === generationRef.current) {
+          setMessages((currentMessages) => currentMessages.map((item) => item.recipient_id === me && !item.read_at && (item.created_at < cursor.created_at || (item.created_at === cursor.created_at && item.id <= cursor.id)) ? { ...item, read_at: new Date().toISOString() } : item));
+          void refreshNotifications();
+        }
+      }
+    } catch {
+      // A later visibility/reconnect catch-up retries the authoritative cursor.
+    } finally {
+      readRunningRef.current = false;
+      if (readCursorRef.current && generation === generationRef.current) void markReadThrough(readCursorRef.current);
+    }
   }, [id, me, refreshNotifications]);
 
   const load = React.useCallback(async () => {
+    const generation = generationRef.current;
+    const controller = new AbortController();
+    requestsRef.current.add(controller);
     try {
-      const response = await browserFetch(`/api/threads/${id}`, { cache: "no-store" });
+      const response = await browserFetch(`/api/threads/${id}`, { cache: "no-store", signal: controller.signal });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error?.message ?? "Failed to load thread");
+      if (generation !== generationRef.current) return;
       const next = result.data as ThreadDetail;
       setDetail(next);
       setMessages((current) => mergeMessages(current, next.messages));
       setError("");
       const lastReceived = [...next.messages].reverse().find((message) => message.recipient_id === me && !message.read_at);
       if (lastReceived) void markReadThrough(lastReceived);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Failed to load"); }
-    finally { setLoading(false); }
+    } catch (caught) {
+      if (!controller.signal.aborted && generation === generationRef.current) setError(caught instanceof Error ? caught.message : "Failed to load");
+    } finally {
+      requestsRef.current.delete(controller);
+      if (generation === generationRef.current) setLoading(false);
+    }
   }, [id, me, markReadThrough]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    generationRef.current += 1;
+    for (const request of requestsRef.current) request.abort();
+    requestsRef.current.clear();
+    readCursorRef.current = null;
+    readRunningRef.current = false;
+    setDetail(null);
+    setMessages([]);
+    setLoading(true);
+    setError("");
+    wasAtBottomRef.current = true;
+    void load();
+    return () => {
+      generationRef.current += 1;
+      for (const request of requestsRef.current) request.abort();
+      requestsRef.current.clear();
+    };
+  }, [id, me, load]);
   React.useEffect(() => subscribe((event) => {
     if (event.kind !== "message" || event.message.thread_id !== id) return;
     setMessages((current) => mergeMessages(current, [event.message]));
     if (event.message.recipient_id === me) void markReadThrough(event.message);
   }), [id, markReadThrough, me, subscribe]);
   React.useEffect(() => { if (status === "connected") void load(); }, [status, load]);
+  React.useEffect(() => {
+    const visible = () => {
+      if (document.visibilityState !== "visible") return;
+      void load();
+      const lastIncoming = [...messages].reverse().find((message) => message.recipient_id === me && !message.read_at);
+      if (lastIncoming) void markReadThrough(lastIncoming);
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => document.removeEventListener("visibilitychange", visible);
+  }, [load, markReadThrough, me, messages]);
   React.useEffect(() => {
     if (status === "connected") return;
     const poll = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30_000);
@@ -69,26 +132,38 @@ export default function ThreadPage() {
     if (!detail?.before) return;
     setOlderLoading(true); setError("");
     const node = listRef.current; const oldHeight = node?.scrollHeight ?? 0;
+    const generation = generationRef.current;
+    const controller = new AbortController();
+    requestsRef.current.add(controller);
     try {
-      const response = await browserFetch(`/api/threads/${id}?before=${encodeURIComponent(detail.before)}`, { cache: "no-store" });
+      const response = await browserFetch(`/api/threads/${id}?before=${encodeURIComponent(detail.before)}`, { cache: "no-store", signal: controller.signal });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error?.message || "Could not load earlier messages.");
+      if (generation !== generationRef.current) return;
       const previous = result.data as ThreadDetail;
       setMessages((current) => mergeMessages(previous.messages, current));
       setDetail((current) => current ? { ...current, has_more: previous.has_more, before: previous.before } : previous);
       requestAnimationFrame(() => { if (node) node.scrollTop += node.scrollHeight - oldHeight; });
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load earlier messages."); }
-    finally { setOlderLoading(false); }
+    } catch (caught) {
+      if (!controller.signal.aborted && generation === generationRef.current) setError(caught instanceof Error ? caught.message : "Could not load earlier messages.");
+    } finally {
+      requestsRef.current.delete(controller);
+      if (generation === generationRef.current) setOlderLoading(false);
+    }
   }
 
   async function deliver(message: DisplayMessage) {
+    const generation = generationRef.current;
     setMessages((current) => mergeMessages(current, [{ ...message, delivery: "pending", error: undefined }]));
     try {
       const response = await browserFetch(`/api/threads/${id}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: message.body, client_action_id: message.client_action_id }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error?.message ?? "Send failed");
+      if (generation !== generationRef.current) return;
       setMessages((current) => mergeMessages(current, [result.data as Message])); setError("");
-    } catch (caught) { setMessages((current) => failedMessage(current, message.id, caught instanceof Error ? caught.message : "Send failed")); }
+    } catch (caught) {
+      if (generation === generationRef.current) setMessages((current) => failedMessage(current, message.id, caught instanceof Error ? caught.message : "Send failed"));
+    }
   }
 
   function send(event: React.FormEvent) {
@@ -114,7 +189,7 @@ export default function ThreadPage() {
     <div ref={listRef} onScroll={(event) => { const node=event.currentTarget; wasAtBottomRef.current=node.scrollHeight-node.scrollTop-node.clientHeight<80; }} className="flex-1 space-y-2 overflow-y-auto bg-[#241712]/50 p-3">
       {messages.length===0 && <p className="text-center text-xs text-[#bba995]">No messages yet. Say hello!</p>}
       {messages.map((message) => { const mine=message.sender_id===me; return <div key={message.id} className={`flex ${mine?"justify-end":"justify-start"}`}><div className={`max-w-[72%] rounded-2xl px-3 py-2 text-sm ${mine?"rounded-br-sm bg-[#ead7b7] text-[#241712]":"rounded-bl-sm bg-[#1a100c] text-[#f6ead8] ring-1 ring-[#4a3025]/50"}`}>
-        <p className="whitespace-pre-wrap">{message.body}</p><div className={`mt-1 flex items-center justify-end gap-2 text-[10px] ${mine?"text-[#6b5142]":"text-[#bba995]"}`}><span>{new Date(message.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} {message.read_at?"Read":""}</span>{message.delivery==="pending"&&<span>Sending...</span>}{message.delivery==="failed"&&<button type="button" className="font-semibold underline" onClick={() => void deliver(message)}>Retry</button>}</div>
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.body}</p><div className={`mt-1 flex items-center justify-end gap-2 text-[10px] ${mine?"text-[#6b5142]":"text-[#bba995]"}`}><span>{new Date(message.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} {message.read_at?"Read":""}</span>{message.delivery==="pending"&&<span>Sending...</span>}{message.delivery==="failed"&&<button type="button" className="font-semibold underline" onClick={() => void deliver(message)}>Retry</button>}</div>
         {message.delivery==="failed"&&<p role="alert" className="mt-1 text-[11px] text-[#7f1d1d]">{message.error}</p>}</div></div>; })}
     </div>
     {error&&<p role="alert" className="px-3 py-2 text-sm text-[#f1c7bd]">{error}</p>}

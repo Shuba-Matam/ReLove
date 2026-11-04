@@ -17,6 +17,18 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
     if (userId) void controller.connect(userId); else controller.disconnect();
     return () => controller.disconnect();
   }, [controller,userId]);
+  React.useEffect(() => {
+    const catchUp = () => controller.catchUp();
+    const visibility = () => { if (document.visibilityState === "visible") catchUp(); };
+    window.addEventListener("online", catchUp);
+    window.addEventListener("focus", catchUp);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.removeEventListener("online", catchUp);
+      window.removeEventListener("focus", catchUp);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [controller]);
   const subscribe = React.useCallback((listener: (event: MessagingEvent) => void) => controller.subscribe(listener), [controller]);
   return <MessagingContext.Provider value={{ status, subscribe }}>{children}</MessagingContext.Provider>;
 }

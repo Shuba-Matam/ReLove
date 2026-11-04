@@ -14,6 +14,13 @@ describe("messaging state", () => {
     const read={...base,read_at:"2026-11-05T00:01:00.000Z"};
     expect(mergeMessages([second,base],[read])).toEqual([read,second]);
   });
+  it("scopes action reconciliation by sender and preserves newer read receipts", () => {
+    const action = "99999999-9999-4999-8999-999999999999";
+    const mine = { ...base, client_action_id: action, read_at: "2026-11-05T00:02:00.000Z" };
+    const other = { ...base, id: "88888888-8888-4888-8888-888888888888", sender_id: base.recipient_id, recipient_id: base.sender_id, client_action_id: action };
+    const stale = { ...base, client_action_id: action, read_at: null };
+    expect(mergeMessages([mine], [other, stale])).toEqual([mine, other]);
+  });
   it("keeps failed content and idempotency key available for retry", () => {
     const action={...base,client_action_id:base.id,delivery:"pending" as const};
     expect(failedMessage([action],base.id,"Offline")[0]).toMatchObject({body:"Hello",client_action_id:base.id,delivery:"failed",error:"Offline"});
