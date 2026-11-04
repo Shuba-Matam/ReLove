@@ -28,7 +28,13 @@ AI_USER_DAILY_LIMIT=20       # optional 0..1000; ordinary authenticated account
 AI_OWNER_DAILY_LIMIT=50      # optional 1..1000; allowlisted owner only, falls back to user limit when unset
 AI_TEST_MODE=false           # all authenticated accounts; allowlist still classifies the owner cap
 AI_MAX_RETRIES=0             # no provider retry during activation
+VAPID_SUBJECT=mailto:...     # operator contact URI
+VAPID_PUBLIC_KEY=...         # public half of one web-push keypair
+VAPID_PRIVATE_KEY=...        # server-only
+PUSH_DRAIN_SECRET=...        # scheduled recovery drain bearer secret
 ```
+
+Before enabling push, review and apply `supabase/migrations-draft/005_messaging_notifications.sql`, confirm `public.messages` is in `supabase_realtime`, and schedule a minutely authenticated POST to `/api/push/drain`. Immediate delivery also runs after the message response using Next `after()`, but retries depend on the scheduled drain. Test Chrome/Edge desktop and Android, Firefox, Safari, and an iOS/iPadOS 16.4+ Home Screen installation with two real accounts. Verify account switch and logout do not retain the prior account's subscription.
 
 `AI_OWNER_DAILY_LIMIT` is selected only from the verified server-side user email/ID in `AI_OWNER_ALLOWLIST`; request input cannot raise it. The owner override applies whether or not `AI_TEST_MODE` is enabled. If the override is present but invalid, allowlisted owner requests fail closed; ordinary authenticated users continue to use `AI_USER_DAILY_LIMIT`.
 

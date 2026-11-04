@@ -76,11 +76,8 @@ export function pruneSeenHistory(set: Set<string>, maxSize: number): Set<string>
 // Apple (Safari): web.push.apple.com, api.push.apple.com
 const PUSH_ALLOWLIST_HOSTS = new Set<string>([
   "fcm.googleapis.com",
-  "android.googleapis.com",
   "updates.push.services.mozilla.com",
-  "push.services.mozilla.com",
   "web.push.apple.com",
-  "api.push.apple.com",
 ]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

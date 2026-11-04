@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import { Filters } from "@/components/listings/filters";
 import { ListingFeed } from "@/components/listings/listing-feed";
-import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
   return (
@@ -16,12 +14,7 @@ export default function HomePage() {
             <h1 className="mt-4 text-balance text-[2.35rem] font-semibold leading-[0.98] tracking-[-0.045em] text-[#f6ead8] sm:text-[3.2rem] md:text-[4.15rem] lg:text-[4.8rem]">
               Pre-loved, <span className="text-[#ead7b7]">right here</span> on campus.
             </h1>
-            <div className="mt-6 flex flex-col gap-5 border-l border-[#75513e] pl-4 sm:flex-row sm:items-end sm:justify-between sm:gap-8 sm:pl-5">
-              <p className="max-w-[48ch] text-sm leading-6 text-[#c9b8a4] sm:text-base sm:leading-7">Books, cycles, and room essentials, passed from student to student.</p>
-              <Button asChild variant="secondary" size="sm" className="w-fit shrink-0 rounded-full">
-                <Link href="/categories">Browse</Link>
-              </Button>
-            </div>
+            <div className="mt-6 border-l border-[#75513e] pl-4 sm:pl-5"><p className="max-w-[48ch] text-sm leading-6 text-[#c9b8a4] sm:text-base sm:leading-7">Books, cycles, and room essentials, passed from student to student.</p><p className="mt-2 text-xs text-[#a99482]">Buy or sell anything, effortlessly.</p></div>
           </div>
         </div>
       </section>

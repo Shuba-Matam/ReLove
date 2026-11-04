@@ -5,10 +5,13 @@ import { json, ApiProblem, withApi, readJson } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/auth";
 import { messageSchema } from "@/lib/validation";
 import { z } from "zod";
+import { after } from "next/server";
+import { drainPushOutbox } from "@/lib/server/push";
 
 export const dynamic = "force-dynamic";
 
 const uuidSchema = z.string().uuid();
+function schedulePushDrain() { try { after(() => drainPushOutbox(10).catch(() => undefined)); } catch { /* direct route tests have no request lifecycle */ } }
 
 export const POST = withApi(async (request: NextRequest, context: unknown) => {
   const ctx = context as { params: Promise<{ id: string }> } | { params: { id: string } };
@@ -53,6 +56,7 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
   if (replay) {
     const previous = replay as { thread_id: string; body: string };
     if (previous.thread_id !== threadId || previous.body !== body) throw new ApiProblem(409, "idempotency_mismatch", "This send action was already used for a different message.");
+    schedulePushDrain();
     return json(replay, 200);
   }
 
@@ -71,7 +75,7 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
   if (insertErr) {
     if ((insertErr as { code?: string }).code === "23505") {
       const { data: raced } = await supabase.from("messages").select("id, thread_id, sender_id, recipient_id, body, created_at, read_at, client_action_id").eq("sender_id", sender_id).eq("client_action_id", client_action_id).maybeSingle();
-      if (raced && (raced as { thread_id: string; body: string }).thread_id === threadId && (raced as { body: string }).body === body) return json(raced, 200);
+      if (raced && (raced as { thread_id: string; body: string }).thread_id === threadId && (raced as { body: string }).body === body) { schedulePushDrain(); return json(raced, 200); }
       throw new ApiProblem(409, "idempotency_mismatch", "This send action was already used for a different message.");
     }
     console.error("[messages POST] insert error:", insertErr);
@@ -81,5 +85,6 @@ export const POST = withApi(async (request: NextRequest, context: unknown) => {
   // The messages_bump_thread trigger updates inbox ordering atomically with
   // this insert. A second request adds latency and requires unnecessary grants.
 
+  schedulePushDrain();
   return json(inserted, 201);
 });

@@ -1,15 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, LayoutGrid, Plus, Mail, User } from "lucide-react";
+import { Home, LayoutGrid, Plus, Bell, User } from "lucide-react";
 import { useNotifications } from "@/lib/client/notifications";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/categories", label: "Categories", icon: LayoutGrid },
+  { href: "/categories", label: "Browse", icon: LayoutGrid },
   { href: "/sell", label: "Sell", icon: Plus },
-  { href: "/inbox", label: "Inbox", icon: Mail },
+  { href: "/inbox", label: "Inbox", icon: Bell },
   { href: "/profile", label: "You", icon: User },
 ];
 

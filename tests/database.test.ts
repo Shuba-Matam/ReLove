@@ -16,20 +16,27 @@ const image = `${seller}/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg`;
 async function asUser<T = Record<string, unknown>>(who: string | null, sql: string, params: unknown[] = []) {
   await db.exec(`set role ${who ? "authenticated" : "anon"}`);
   await db.query("select set_config('request.jwt.claim.sub',$1,false)", [who ?? ""]);
+  await db.query("select set_config('request.jwt.claim.role',$1,false)", [who ? "authenticated" : "anon"]);
   try { return await db.query<T>(sql, params); }
-  finally { await db.exec("reset role"); await db.query("select set_config('request.jwt.claim.sub','',false)"); }
+  finally { await db.exec("reset role"); await db.query("select set_config('request.jwt.claim.sub','',false)"); await db.query("select set_config('request.jwt.claim.role','',false)"); }
+}
+async function asService<T = Record<string, unknown>>(sql: string, params: unknown[] = []) {
+  await db.exec("set role service_role");
+  await db.query("select set_config('request.jwt.claim.role','service_role',false)");
+  try { return await db.query<T>(sql, params); } finally { await db.exec("reset role"); await db.query("select set_config('request.jwt.claim.role','',false)"); }
 }
 
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(`
-    create role anon nologin; create role authenticated nologin;
+    create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
     create schema auth; create schema storage;
     create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-    create function auth.role() returns text language sql stable as $$ select current_user::text $$;
-    grant usage on schema auth,storage to anon,authenticated;
-    grant execute on function auth.uid() to anon,authenticated;
+    create function auth.role() returns text language sql stable as $$ select nullif(current_setting('request.jwt.claim.role',true),'') $$;
+    grant usage on schema auth,storage to anon,authenticated,service_role;
+    grant execute on function auth.uid() to anon,authenticated,service_role;
+    grant execute on function auth.role() to anon,authenticated,service_role;
     create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
     create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text not null,owner_id text);
     alter table storage.objects enable row level security;
@@ -113,6 +120,21 @@ describe.sequential("real database migrations and RLS", () => {
     const buyerRows=await asUser<{id:string;unread_count:number}>(buyer,"select id,unread_count from get_inbox(100)");
     expect(buyerRows.rows.some((row)=>row.id===thread)).toBe(true);
     expect((await asUser(stranger,"select * from get_inbox(100)")).rows).toHaveLength(0);
+  });
+  it("isolates push devices and leases durable outbox rows before sending", async () => {
+    const endpoint="https://fcm.googleapis.com/fcm/send/database-test-device";
+    const subscription=(await asUser<{id:string;version:string}>(seller,"insert into push_subscriptions(user_id,endpoint,p256dh,auth) values($1,$2,$3,$4) returning id,version",[seller,endpoint,"p256dh-database-test-key-material","auth-database-test"])).rows[0];
+    expect((await asUser(stranger,"select id from push_subscriptions where id=$1",[subscription.id])).rows).toHaveLength(0);
+    await expect(asUser(buyer,"update push_subscriptions set revoked_at=now() where id=$1",[subscription.id])).resolves.toMatchObject({rows:[]});
+    const pushed=(await asUser<{id:string}>(buyer,"insert into messages(thread_id,sender_id,recipient_id,body,client_action_id) values($1,$2,$3,'push me',$4) returning id",[thread,buyer,seller,"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"])).rows[0];
+    expect((await asService("select id from push_outbox where message_id=$1",[pushed.id])).rows).toHaveLength(1);
+    await expect(asUser(seller,"select * from claim_push_outbox(1,$1)",["cccccccc-cccc-4ccc-8ccc-cccccccccccc"])).rejects.toThrow();
+    const lease="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const claimed=(await asService<{id:string;attempts:number;lease_owner:string}>("select id,attempts,lease_owner from claim_push_outbox(1,$1)",[lease])).rows[0];
+    expect(claimed).toMatchObject({attempts:1,lease_owner:lease});
+    await expect(asService("select complete_push_outbox($1,$2,'sent',201)",[claimed.id,"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"])).rejects.toThrow();
+    await asService("select complete_push_outbox($1,$2,'retry',503)",[claimed.id,lease]);
+    expect((await asService<{status:string;attempts:number}>("select status,attempts from push_outbox where id=$1",[claimed.id])).rows[0]).toEqual({status:"pending",attempts:1});
   });
   it("accepts reports without exposing them to regular users", async () => {
     await asUser(buyer, "insert into reports(listing_id,reporter_id,reason) values($1,$2,'misleading')", [listing, buyer]);

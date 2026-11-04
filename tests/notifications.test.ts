@@ -117,10 +117,8 @@ describe("shouldPollNotifications", () => {
 describe("isValidPushEndpoint — strict allowlist", () => {
   it("allows exact official hosts only", () => {
     expect(isValidPushEndpoint("https://fcm.googleapis.com/fcm/send/abc")).toBe(true);
-    expect(isValidPushEndpoint("https://android.googleapis.com/gcm/send/abc")).toBe(true);
     expect(isValidPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/abc")).toBe(true);
     expect(isValidPushEndpoint("https://web.push.apple.com/abc")).toBe(true);
-    expect(isValidPushEndpoint("https://api.push.apple.com/abc")).toBe(true);
   });
   it("rejects http, wrong hosts, private, credentials", () => {
     expect(isValidPushEndpoint("http://fcm.googleapis.com/fcm/send/abc")).toBe(false);

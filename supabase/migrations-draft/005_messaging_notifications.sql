@@ -68,3 +68,72 @@ begin
   end if;
 end $$;
 
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null unique check(char_length(endpoint) between 20 and 2000),
+  p256dh text not null check(char_length(p256dh) between 20 and 300),
+  auth text not null check(char_length(auth) between 8 and 200),
+  version uuid not null default gen_random_uuid(),
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), revoked_at timestamptz
+);
+create index if not exists push_subscriptions_user_active_idx on public.push_subscriptions(user_id) where revoked_at is null;
+alter table public.push_subscriptions enable row level security;
+drop policy if exists "Users manage own push subscriptions" on public.push_subscriptions;
+create policy "Users manage own push subscriptions" on public.push_subscriptions for all to authenticated using(user_id=auth.uid()) with check(user_id=auth.uid());
+revoke all on public.push_subscriptions from anon,authenticated;
+grant select on public.push_subscriptions to authenticated;
+grant insert(user_id,endpoint,p256dh,auth) on public.push_subscriptions to authenticated;
+grant update(p256dh,auth,version,updated_at,revoked_at) on public.push_subscriptions to authenticated;
+grant delete on public.push_subscriptions to authenticated;
+
+create table if not exists public.push_outbox (
+  id uuid primary key default gen_random_uuid(), message_id uuid not null references public.messages(id) on delete cascade,
+  thread_id uuid not null references public.threads(id) on delete cascade, recipient_id uuid not null references public.profiles(id) on delete cascade,
+  subscription_id uuid not null references public.push_subscriptions(id) on delete cascade, subscription_version uuid not null,
+  status text not null default 'pending' check(status in('pending','sending','sent','failed','cancelled')),
+  attempts integer not null default 0 check(attempts between 0 and 5), next_attempt_at timestamptz not null default now(),
+  lease_owner uuid, lease_expires_at timestamptz, last_status integer, created_at timestamptz not null default now(), sent_at timestamptz,
+  unique(message_id,subscription_id)
+);
+create index if not exists push_outbox_due_idx on public.push_outbox(next_attempt_at,created_at) where status in('pending','sending');
+alter table public.push_outbox enable row level security;
+revoke all on public.push_outbox from anon,authenticated;
+grant select,update on public.push_outbox to service_role;
+grant select,insert,update,delete on public.push_subscriptions to service_role;
+grant select on public.messages to service_role;
+
+create or replace function public.enqueue_message_push()
+returns trigger language plpgsql security definer set search_path='' as $$
+begin
+  insert into public.push_outbox(message_id,thread_id,recipient_id,subscription_id,subscription_version)
+  select new.id,new.thread_id,new.recipient_id,s.id,s.version from public.push_subscriptions s
+   where s.user_id=new.recipient_id and s.revoked_at is null
+   order by s.updated_at desc limit 5 on conflict do nothing;
+  return new;
+end $$;
+drop trigger if exists messages_enqueue_push on public.messages;
+create trigger messages_enqueue_push after insert on public.messages for each row execute function public.enqueue_message_push();
+revoke all on function public.enqueue_message_push() from public;
+
+create or replace function public.claim_push_outbox(p_limit integer,p_lease_owner uuid)
+returns setof public.push_outbox language plpgsql security definer set search_path='' as $$
+begin
+  if auth.role() <> 'service_role' then raise exception 'service role required'; end if;
+  return query update public.push_outbox o set status='sending',attempts=o.attempts+1,lease_owner=p_lease_owner,lease_expires_at=now()+interval '2 minutes'
+   where o.id in(select id from public.push_outbox where attempts<5 and next_attempt_at<=now() and (status='pending' or (status='sending' and lease_expires_at<now())) order by next_attempt_at,created_at for update skip locked limit least(greatest(p_limit,1),50)) returning o.*;
+end $$;
+create or replace function public.complete_push_outbox(p_id uuid,p_lease_owner uuid,p_result text,p_status integer default null)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  if auth.role() <> 'service_role' then raise exception 'service role required'; end if;
+  update public.push_outbox set
+    status=case when p_result='sent' then 'sent' when p_result='cancelled' then 'cancelled' when attempts>=5 then 'failed' else 'pending' end,
+    next_attempt_at=case when p_result='retry' and attempts<5 then now()+make_interval(secs=>least(3600,30*(2^attempts))) else next_attempt_at end,
+    sent_at=case when p_result='sent' then now() else sent_at end,last_status=p_status,lease_owner=null,lease_expires_at=null
+   where id=p_id and status='sending' and lease_owner=p_lease_owner;
+  if not found then raise exception 'lease mismatch'; end if;
+end $$;
+revoke all on function public.claim_push_outbox(integer,uuid),public.complete_push_outbox(uuid,uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.claim_push_outbox(integer,uuid),public.complete_push_outbox(uuid,uuid,text,integer) to service_role;
+

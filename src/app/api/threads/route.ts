@@ -4,41 +4,9 @@ import { getAppMode } from "@/lib/server/env";
 import { json, ApiProblem, withApi, readJson } from "@/lib/server/http";
 import { requireUser } from "@/lib/server/auth";
 import { startThreadSchema } from "@/lib/validation";
-import type { ThreadSummary, Profile } from "@/lib/marketplace";
+import type { ThreadSummary } from "@/lib/marketplace";
 
 export const dynamic = "force-dynamic";
-
-type ThreadRow = {
-  id: string;
-  listing_id: string;
-  buyer_id: string;
-  seller_id: string;
-  created_at: string;
-  updated_at: string;
-  listing: { id: string; title: string; image_url: string; price_inr: number; status: string } | null;
-  buyer: Profile | null;
-  seller: Profile | null;
-};
-
-function toThreadSummary(row: ThreadRow, currentUserId: string, lastMessage: { body: string; created_at: string; sender_id: string } | null, unreadCount: number): ThreadSummary {
-  const isBuyer = row.buyer_id === currentUserId;
-  const other = isBuyer ? row.seller : row.buyer;
-  const listing = row.listing ?? { id: row.listing_id, title:"Listing unavailable",image_url:"/icons/icon-192.png",price_inr:0,status:"hidden" };
-  return {
-    id: row.id,
-    listing: {
-      id: listing.id,
-      title: listing.title,
-      image_url: listing.image_url,
-      price_inr: listing.price_inr,
-      status: listing.status as ThreadSummary["listing"]["status"],
-    },
-    participant: other ?? { id: isBuyer ? row.seller_id : row.buyer_id, display_name: "Unknown", avatar_url: null, hostel_block: null },
-    last_message: lastMessage,
-    unread_count: unreadCount,
-    updated_at: row.updated_at,
-  };
-}
 
 export const GET = withApi(async () => {
   const mode = getAppMode();
@@ -47,7 +15,7 @@ export const GET = withApi(async () => {
     return json([] as ThreadSummary[]);
   }
 
-  const { supabase, user } = await requireUser();
+  const { supabase } = await requireUser();
 
   const { data: threads, error } = await supabase.rpc("get_inbox", { p_limit: 100 });
 

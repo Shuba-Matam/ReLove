@@ -106,7 +106,8 @@ export default function ThreadPage() {
 
   return <div className="mx-auto flex h-[68vh] max-w-3xl flex-col overflow-hidden rounded-xl bg-[#1a100c] ring-1 ring-[#4a3025]/40">
     <header className="flex items-center gap-3 bg-[#1a100c] p-2.5"><Button variant="ghost" size="sm" onClick={() => router.push("/inbox")} className="h-7">Back</Button>
-      {/* eslint-disable-next-line @next/next/no-img-element */}<img src={detail.thread.listing.image_url} alt={detail.thread.listing.title} className="size-8 rounded-lg object-cover ring-1 ring-[#4a3025]/40" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={detail.thread.listing.image_url} alt={detail.thread.listing.title} className="size-8 rounded-lg object-cover ring-1 ring-[#4a3025]/40" />
       <div className="min-w-0"><p className="truncate text-sm font-medium text-[#f6ead8]">{detail.thread.listing.title}</p><p className="text-xs text-[#bba995]">{detail.thread.participant.display_name}</p></div>
       <Link href={`/listings/${detail.thread.listing.id}`} className="ml-auto text-xs font-medium text-[#ead7b7] underline underline-offset-4">View listing</Link></header>
     {detail.has_more && <div className="flex justify-center py-2"><Button variant="ghost" size="sm" disabled={olderLoading} onClick={loadOlder} className="h-7 text-xs">{olderLoading ? "Loading..." : "Earlier messages"}</Button></div>}

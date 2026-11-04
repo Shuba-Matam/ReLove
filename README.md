@@ -6,7 +6,8 @@ A student marketplace for giving pre-loved items a new home. Built with Next.js 
 
 - Responsive dark marketplace, 2-column mobile and 4-column desktop feed, search, category/price/condition/hostel filters, and load-more.
 - Google-only login, profiles, listing create/edit/sold/delete, image upload, seller confirmation, and original-photo display.
-- Private per-listing conversations, unread counts, focus refresh, earlier-message loading, and insert-only reports.
+- Private per-listing conversations with optimistic idempotent sending, live incoming messages and read receipts, realtime unread counts, earlier-message loading, and insert-only reports.
+- Optional standards-based web push for opted-in devices, with generic private notification text and a durable retry outbox.
 - Reviewable database migrations with RLS, column privileges, full-text indexing, category seeds, own-folder storage, and atomic AI usage budgets.
 - Explicit editable listing suggestions with missing-detail and photo feedback (Meta Muse Spark 1.3), WAV voice transcription (Meta Muse Voice Transcribe 1.0), and single- or multi-item SAM 3.1 cutouts. All AI features are disabled by default and require server credentials, pricebook entries, and database limits.
 - One uploaded source photo can be manually boxed into up to three item cutouts and then published as separate listings. There is no automatic object discovery and no requirement to upload three photos.
@@ -51,8 +52,15 @@ To connect the actual marketplace, apply the approved SQL files in order through
 | BASETEN_API_KEY | Optional compatibility credential for Muse Spark Open, not the production default |
 | BASETEN_MODEL | Optional compatibility model, defaults to meta-models/muse-spark-open-1026 |
 | AI_MAX_RETRIES | Provider retries after the first attempt; production uses `0`, so one explicit action makes at most one provider attempt |
+| SUPABASE_SERVICE_ROLE_KEY | Server-only worker access for push delivery and the existing AI budget ledger |
+| VAPID_SUBJECT | Operator contact URI such as `mailto:admin@example.com` |
+| VAPID_PUBLIC_KEY | Public half of the web-push keypair |
+| VAPID_PRIVATE_KEY | Server-only private half of the web-push keypair |
+| PUSH_DRAIN_SECRET | Bearer secret for the scheduled retry drain endpoint |
 
-All values remain server-side; no NEXT_PUBLIC keys, service-role browser clients, or direct browser Supabase calls. Google client secret belongs in Supabase's provider configuration, not the frontend. Development coding agents and their credentials are separate from the models called by the running Re-Love app. No provider smoke test or live enablement is claimed by this repository update.
+Secrets remain server-side. The authenticated realtime bootstrap returns only the current verified user's short-lived access token, expiry, Supabase URL, and public key. The token stays in memory, the HTTP-only refresh token is never returned, RLS scopes Postgres Changes, and disconnect clears the browser client immediately. No service role reaches the browser. Google client secret belongs in Supabase's provider configuration, not the frontend. Development coding agents and their credentials are separate from the models called by the running Re-Love app.
+
+Apply `supabase/migrations-draft/005_messaging_notifications.sql` after the earlier migrations. Configure a platform scheduler to POST `/api/push/drain` with `Authorization: Bearer $PUSH_DRAIN_SECRET` every minute. Next `after()` starts an immediate best-effort drain after a committed message, but it is not the durable retry mechanism. Web push is best effort. iPhone and iPad require iOS/iPadOS 16.4 or later and an installed Home Screen web app.
 
 ## Architecture
 

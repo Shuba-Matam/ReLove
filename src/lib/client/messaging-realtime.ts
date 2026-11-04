@@ -18,7 +18,7 @@ function isMessage(value: unknown): value is Message {
 export class MessagingRealtimeController {
   private listeners = new Set<Listener>();
   private channel: RealtimeChannel | null = null;
-  private client: SupabaseClient<any> | null = null;
+  private client: SupabaseClient | null = null;
   private ownerId: string | null = null;
   private generation = 0;
   private renewal: ReturnType<typeof setTimeout> | null = null;
@@ -53,7 +53,7 @@ export class MessagingRealtimeController {
       });
       client.realtime.setAuth(bootstrap.accessToken);
       this.client = client;
-      const channel = client.channel(`messages:${userId}`, { config: { private: true } });
+      const channel = client.channel(`messages:${userId}`);
       const onChange = (payload: { new: unknown }) => {
         if (generation !== this.generation || this.ownerId !== userId || !isMessage(payload.new)) return;
         const message = payload.new;

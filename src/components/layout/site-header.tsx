@@ -3,7 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import * as React from "react";
-import { Search, Plus, Mail, User, LogOut } from "lucide-react";
+import { Search, Plus, Bell, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSession } from "@/lib/client/session";
@@ -47,7 +47,7 @@ export function SiteHeader() {
         {/* Desktop nav */}
         <nav aria-label="Primary" className="hidden h-10 items-center gap-1 text-[13px] md:flex">
           <Link href="/" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-1 focus-visible:ring-offset-[#1a100c]", pathname === "/" ? "bg-[#ead7b7] text-[#241712]" : "text-[#bba995] hover:bg-[#241712] hover:text-[#f6ead8]")}>Home</Link>
-          <Link href="/categories" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-1 focus-visible:ring-offset-[#1a100c]", pathname.startsWith("/categories") ? "bg-[#ead7b7] text-[#241712]" : "text-[#bba995] hover:bg-[#241712] hover:text-[#f6ead8]")}>Categories</Link>
+          <Link href="/categories" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-1 focus-visible:ring-offset-[#1a100c]", pathname.startsWith("/categories") ? "bg-[#ead7b7] text-[#241712]" : "text-[#bba995] hover:bg-[#241712] hover:text-[#f6ead8]")}>Browse</Link>
           <Link href="/search" className={cn("rounded-full px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-1 focus-visible:ring-offset-[#1a100c]", pathname.startsWith("/search") ? "bg-[#ead7b7] text-[#241712]" : "text-[#bba995] hover:bg-[#241712] hover:text-[#f6ead8]")}>Search</Link>
         </nav>
 
@@ -69,7 +69,7 @@ export function SiteHeader() {
 
           <Button asChild variant="ghost" size="icon" aria-label={unreadCount > 0 ? `Inbox, ${unreadCount} unread` : "Inbox"} className="relative size-10">
             <Link href="/inbox">
-              <Mail className="size-5" aria-hidden="true" />
+              <Bell className="size-5" aria-hidden="true" />
               {unreadCount > 0 && (
                 <span className="absolute -right-1 -top-1">
                   <UnreadBadge count={unreadCount} className="min-h-[18px] min-w-[18px] px-1 text-[10px] leading-none" />
@@ -89,7 +89,7 @@ export function SiteHeader() {
                 )}
                 <span className="hidden max-w-[120px] truncate text-[13px] font-medium text-[#f6ead8] lg:inline">{session.user.display_name}</span>
               </Link>
-              <form action="/auth/logout" method="post">
+              <form action="/auth/logout" method="post" onSubmit={(event)=>{event.preventDefault();const form=event.currentTarget;void (async()=>{try{if("serviceWorker" in navigator){const registration=await navigator.serviceWorker.ready;const subscription=await registration.pushManager.getSubscription();if(subscription){await fetch.call(globalThis,"/api/push/subscriptions",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:subscription.endpoint})});await subscription.unsubscribe();}}}finally{form.submit();}})();}}>
                 <button aria-label="Sign out" type="submit" className="inline-flex size-10 items-center justify-center rounded-full text-[#bba995] transition hover:bg-[#241712] hover:text-[#f6ead8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e6c79c] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a100c]">
                   <LogOut className="size-4" />
                 </button>

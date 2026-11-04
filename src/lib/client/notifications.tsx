@@ -154,6 +154,12 @@ function NotificationsInner({
     else if(userId && mode === "live") scheduler.ensureInterval();
   }, [messaging.status,userId,mode]);
 
+  React.useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    if (state.unreadCount > 0 && "setAppBadge" in navigator) void navigator.setAppBadge(state.unreadCount).catch(() => undefined);
+    else if ("clearAppBadge" in navigator) void navigator.clearAppBadge().catch(() => undefined);
+  }, [state.unreadCount]);
+
   const dismissToast = React.useCallback((id: string) => {
     schedulerRef.current?.dismissToast(id);
   }, []);

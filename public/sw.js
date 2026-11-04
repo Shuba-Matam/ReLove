@@ -51,7 +51,7 @@ self.addEventListener("push", (event) => {
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     data: { url },
-    tag: threadId ? `relove-thread-${threadId}` : "relove-inbox",
+    tag: data && typeof data.messageId === "string" && UUID_RE.test(data.messageId) ? `relove-message-${data.messageId}` : threadId ? `relove-thread-${threadId}` : "relove-inbox",
     renotify: false,
   };
 
@@ -100,6 +100,7 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-self.addEventListener("pushsubscriptionchange", () => {
+self.addEventListener("pushsubscriptionchange", (event) => {
+  if (event.oldSubscription) event.waitUntil(fetch("/api/push/subscriptions", { method: "DELETE", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: event.oldSubscription.endpoint }) }).catch(() => undefined));
   // No durable storage yet — requires owner-approved schema (docs/drafts/004_notifications.sql).
 });

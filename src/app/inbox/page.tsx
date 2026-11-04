@@ -37,7 +37,6 @@ export default function InboxPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [load, status]);
   React.useEffect(() => subscribe((event) => { if (event.kind === "message") void load(); }), [load, subscribe]);
-  React.useEffect(() => { if (status === "connected") void load(); }, [load, status]);
   React.useEffect(() => { if (status === "connected") return; const timer=window.setInterval(() => { if(document.visibilityState === "visible") void load(); },30_000); return () => window.clearInterval(timer); }, [load,status]);
 
   if (isDemo) {

@@ -192,3 +192,7 @@ All pending code will live in isolated `src/app/api/notifications/**` and `src/l
 Open questions answered: closed-app push is **in scope** alongside email; provider/keys need owner input as above.  
 For schema review: comment on `docs/drafts/004_notifications.sql` — integrator will not apply until `Approved-by: <owner>` recorded. Email/push not sent to real users until test recipient route configured; email stays disabled without verified sender/domain.
 
+# Superseded
+
+This historical proposal is superseded by the approved messaging and web-push implementation in `supabase/migrations-draft/005_messaging_notifications.sql`, the authenticated Supabase Realtime browser transport, and the release steps in `docs/RELEASE.md`. Do not use the older email-oriented draft for deployment.
+
